@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  users        User[]
+  shiftPeriods ShiftPeriod[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("cast") // admin, employee, cast
+  hourlyRate   Int?     // 時給（キャスト用）
+  posId        String?  @unique // POS連携用ID
+  storeId      String?  // 所属店舗（nullなら全店舗管理者）
+  store        Store?   @relation(fields: [storeId], references: [id])
+  createdAt    DateTime @default(now())
+
+  shiftSlots      ShiftSlot[]
+  shiftRequests   ShiftRequest[]
+  adjustmentsFrom ShiftAdjustment[]
+}
+
+model ShiftPeriod {
+  id               String   @id @default(cuid())
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id])
+  year             Int
+  month            Int
+  half             String   // "first" | "second"
+  targetBudgetTotal Int?
+  sheetName        String?  // Google Sheets上のシート名
+  createdAt        DateTime @default(now())
+
+  shiftDays     ShiftDay[]
+  shiftRequests ShiftRequest[]
+
+  @@unique([storeId, year, month, half])
+}
+
+model ShiftDay {
+  id              String   @id @default(cuid())
+  periodId        String
+  period          ShiftPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  date            DateTime
+  dayOfWeek       String   // 月,火,水,木,金,土,日,祝
+  targetBudget    Int?     // 日別目標予算
+  eventName       String?  // 企画名
+  expectedVisitors String? // ご来店予定
+  notes           String?  // 備考
+  employeeOnDuty  String?  // 出勤社員
+
+  shiftSlots      ShiftSlot[]
+  adjustments     ShiftAdjustment[]
+
+  @@unique([periodId, date])
+}
+
+model ShiftSlot {
+  id       String @id @default(cuid())
+  dayId    String
+  day      ShiftDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  timeSlot Float  // 19.0, 19.5, 20.0, ... 28.0
+  castId   String
+  cast     User   @relation(fields: [castId], references: [id])
+  isStart  Boolean @default(false) // 出勤開始スロット
+  isEnd    Boolean @default(false) // 退勤スロット
+  memo     String? // スロット別メモ
+
+  @@unique([dayId, timeSlot, castId])
+}
+
+model ShiftRequest {
+  id        String   @id @default(cuid())
+  castId    String
+  cast      User     @relation(fields: [castId], references: [id])
+  periodId  String
+  period    ShiftPeriod @relation(fields: [periodId], references: [id])
+  date      DateTime
+  startTime Float    // 19.0 = 19:00
+  endTime   Float    // 25.0 = 25:00 (翌1:00)
+  status    String   @default("pending") // pending, approved, rejected, adjusted
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+model ShiftAdjustment {
+  id            String   @id @default(cuid())
+  dayId         String
+  day           ShiftDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  castId        String
+  cast          User     @relation(fields: [castId], references: [id])
+  originalStart Float
+  originalEnd   Float
+  adjustedStart Float?   // nullならカット
+  adjustedEnd   Float?   // nullならカット
+  action        String   // "cut" | "shorten" | "move"
+  reason        String?
+  createdAt     DateTime @default(now())
+}
