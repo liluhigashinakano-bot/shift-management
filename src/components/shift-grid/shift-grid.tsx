@@ -209,22 +209,22 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   };
 
   const days = data.shiftDays;
-  const mid = Math.ceil(days.length / 2);
+  const mid = Math.min(8, days.length); // 前半8日、後半は残り
   const weeks = [days.slice(0, mid), days.slice(mid)];
 
   return (
     <div className="space-y-8">
       {weeks.map((week, weekIdx) => (
         <div key={weekIdx} className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
-          <table className="border-collapse text-xs w-full min-w-[900px]" style={{ tableLayout: "fixed" }}>
+          <table className="border-collapse text-xs w-full" style={{ tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "42px" }} />{/* 時間 */}
+              <col style={{ width: "38px" }} />{/* 時間 */}
               {week.map((_, i) => (
                 <React.Fragment key={i}>
-                  <col style={{ width: "56px" }} />{/* 出勤 */}
-                  <col style={{ width: "56px" }} />{/* 退勤 */}
-                  <col style={{ width: "15px" }} />{/* 人 */}
-                  <col style={{ width: "48px" }} />{/* メモ */}
+                  <col style={{ width: "46px" }} />{/* 出勤 */}
+                  <col style={{ width: "46px" }} />{/* 退勤 */}
+                  <col style={{ width: "14px" }} />{/* 人 */}
+                  <col style={{ width: "38px" }} />{/* メモ */}
                 </React.Fragment>
               ))}
             </colgroup>
@@ -241,7 +241,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                     <th
                       key={day.id}
                       colSpan={4}
-                      className={`border-b border-gray-400 px-1 py-0.5 text-center font-bold text-[12px] ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                     >
                       <span>{d.getDate()}</span>
                       <span className="ml-1 text-[10px] font-normal">
@@ -258,10 +258,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                   const isLast = dayIdx === week.length - 1;
                   return (
                     <React.Fragment key={day.id}>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[9px] text-gray-500" style={{ width: "56px" }}>出勤</th>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[9px] text-gray-500" style={{ width: "56px" }}>退勤</th>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[9px] text-gray-500" style={{ width: "15px" }}>人</th>
-                      <th className={`border-b border-gray-300 px-0.5 py-0.5 text-center text-[9px] text-gray-500 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`} style={{ width: "48px" }}>メモ</th>
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">出勤</th>
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">退勤</th>
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">人</th>
+                      <th className={`border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>メモ</th>
                     </React.Fragment>
                   );
                 })}
@@ -274,7 +274,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                 const hourBorder = isHourBoundary ? "border-t border-t-gray-400" : "border-t border-t-gray-200";
                 return (
                   <tr key={slot} className={rowBg} style={{ height: "42px", maxHeight: "42px" }}>
-                    <td style={{ height: "42px" }} className={`border-r-[3px] border-gray-500 ${hourBorder} px-1 py-0 font-mono sticky left-0 z-10 text-[11px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
+                    <td style={{ height: "42px" }} className={`border-r-[3px] border-gray-500 ${hourBorder} px-0.5 py-0 font-mono sticky left-0 z-10 text-[10px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
                       {isHourBoundary ? `${Math.floor(slot)}:00` : `:30`}
                     </td>
                     {week.map((day, dayIdx) => {
@@ -300,8 +300,12 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                           >
                             <div style={{ height: "42px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                             {startCasts.map((s) => {
+                              // ヘルプ出勤: 所属店舗が現在のシフト表と異なる場合「店舗名+名前」
+                              const castInfo = allCasts.find((c) => c.id === s.castId);
+                              const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
+                              const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
                               const castCount = startCasts.length;
-                              const nameFontSize = castCount <= 1 ? 10 : castCount <= 2 ? 9 : castCount <= 3 ? 8 : 7;
+                              const nameFontSize = castCount <= 1 ? 9 : castCount <= 2 ? 8 : castCount <= 3 ? 7 : 6;
                               const hasMemo = !!s.memo;
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
@@ -346,9 +350,9 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                                       handleCastClick(day, s.castId, s.cast.name);
                                     }
                                   }}
-                                  title={isAdjusted && req ? `変更済: ${req.startTime}→${origStart} / ${req.endTime}→${origEnd}` : hasMemo ? `メモ: ${s.memo}` : `${s.cast.name}`}
+                                  title={isAdjusted && req ? `変更済: ${req.startTime}→${origStart} / ${req.endTime}→${origEnd}` : hasMemo ? `メモ: ${s.memo}` : displayName}
                                 >
-                                  {s.cast.name}
+                                  {displayName}
                                 </span>
                               );
                             })}
@@ -363,8 +367,11 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                           >
                             <div style={{ height: "42px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                             {endCasts.map((s) => {
+                              const endCastInfo = allCasts.find((c) => c.id === s.castId);
+                              const endIsHelp = endCastInfo?.store?.name && endCastInfo.store.name !== data.store.name;
+                              const endDisplayName = endIsHelp ? `${endCastInfo!.store!.name}${s.cast.name}` : s.cast.name;
                               const endCastCount = endCasts.length;
-                              const endNameFontSize = endCastCount <= 1 ? 10 : endCastCount <= 2 ? 9 : endCastCount <= 3 ? 8 : 7;
+                              const endNameFontSize = endCastCount <= 1 ? 9 : endCastCount <= 2 ? 8 : endCastCount <= 3 ? 7 : 6;
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
                               const origEnd = (castSlots[castSlots.length - 1]?.timeSlot ?? slot) + 0.5;
@@ -385,17 +392,17 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                                 onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "end", origStart, origEnd)}
                                 style={{ ...endColor, fontSize: `${endNameFontSize}px` }}
                                 className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing leading-tight hover:brightness-90 whitespace-nowrap"
-                                title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : s.cast.name}
+                                title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
                                 onClick={() => handleCastClick(day, s.castId, s.cast.name)}
                               >
-                                {s.cast.name}
+                                {endDisplayName}
                               </span>
                               );
                             })}
                             </div>
                           </td>
                           {/* 人数（グラデーション） */}
-                          <td style={{ boxShadow: "inset 1px 0 0 #d1d5db", height: "42px", maxHeight: "42px", ...countStyle(count) }} className={`${hourBorder} px-0.5 py-0 text-center font-bold text-[11px]`}>
+                          <td style={{ boxShadow: "inset 1px 0 0 #d1d5db", height: "42px", maxHeight: "42px", ...countStyle(count) }} className={`${hourBorder} px-0 py-0 text-center font-bold text-[9px]`}>
                             {count || ""}
                           </td>
                           {/* 管理者メモ（直接入力可能） */}

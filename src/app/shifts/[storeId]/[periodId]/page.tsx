@@ -55,6 +55,64 @@ export default async function ShiftPage({
     notes: r.notes,
   }));
 
+  // ヘルプ出勤情報: この店舗所属のキャストが他店舗のシフトに入っている情報
+  const storeCasts = await prisma.user.findMany({
+    where: { storeId, role: "cast" },
+    select: { id: true, name: true },
+  });
+  const storeCastIds = storeCasts.map((c) => c.id);
+  const castNameMap = new Map(storeCasts.map((c) => [c.id, c.name]));
+
+  const otherPeriods = await prisma.shiftPeriod.findMany({
+    where: {
+      year: period.year,
+      month: period.month,
+      half: period.half,
+      storeId: { not: storeId },
+    },
+    include: {
+      store: { select: { name: true } },
+      shiftDays: {
+        select: {
+          date: true,
+          shiftSlots: {
+            where: { castId: { in: storeCastIds } },
+            select: { castId: true, timeSlot: true },
+          },
+        },
+      },
+    },
+  });
+
+  const helpInfo: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]> = {};
+  const dayMapForHelp = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
+
+  for (const op of otherPeriods) {
+    for (const opDay of op.shiftDays) {
+      if (opDay.shiftSlots.length === 0) continue;
+      const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
+      const myDayId = dayMapForHelp.get(dateKey);
+      if (!myDayId) continue;
+
+      const castSlots = new Map<string, number[]>();
+      for (const slot of opDay.shiftSlots) {
+        if (!castSlots.has(slot.castId)) castSlots.set(slot.castId, []);
+        castSlots.get(slot.castId)!.push(slot.timeSlot);
+      }
+
+      for (const [castId, slots] of castSlots) {
+        const castName = castNameMap.get(castId) || "不明";
+        if (!helpInfo[myDayId]) helpInfo[myDayId] = [];
+        helpInfo[myDayId].push({
+          castName,
+          storeName: op.store.name,
+          startTime: Math.min(...slots),
+          endTime: Math.max(...slots) + 0.5,
+        });
+      }
+    }
+  }
+
   const halfLabel = period.half === "first" ? "前半" : "後半";
   const isAdmin = (session.user as any).role === "admin" || (session.user as any).role === "employee";
 
@@ -95,7 +153,7 @@ export default async function ShiftPage({
           </div>
         </div>
         <ShiftGrid
-          initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo: {} }))}
+          initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo }))}
           allCasts={allCasts.map((c) => ({
             id: c.id,
             name: c.name,

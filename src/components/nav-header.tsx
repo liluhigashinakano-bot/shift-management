@@ -14,6 +14,7 @@ type Props = {
 
 const navItems = [
   { href: "/dashboard", label: "ダッシュボード" },
+  { href: "/mypage", label: "マイページ", castOnly: true },
   { href: "/casts", label: "キャスト管理" },
   { href: "/stores", label: "店舗管理", adminOnly: true },
 ];
@@ -29,7 +30,11 @@ export function NavHeader({ user }: Props) {
         </Link>
         <nav className="flex gap-1">
           {navItems
-            .filter((item) => !item.adminOnly || user.role === "admin")
+            .filter((item) => {
+              if (item.adminOnly && user.role !== "admin") return false;
+              if ((item as any).castOnly && user.role !== "cast") return false;
+              return true;
+            })
             .map((item) => (
               <Link
                 key={item.href}
