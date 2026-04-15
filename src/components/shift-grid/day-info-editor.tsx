@@ -34,7 +34,15 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
   const [expectedVisitors, setExpectedVisitors] = useState(
     day.expectedVisitors ?? ""
   );
-  const [notes, setNotes] = useState(day.notes ?? "");
+  const [notes, setNotes] = useState(() => {
+    if (!day.notes) return "";
+    try {
+      const parsed = JSON.parse(day.notes);
+      return parsed.text || "";
+    } catch {
+      return day.notes;
+    }
+  });
   const [employeeOnDuty, setEmployeeOnDuty] = useState(
     day.employeeOnDuty ?? ""
   );
@@ -51,7 +59,15 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
         targetBudget: targetBudget ? parseInt(targetBudget) : null,
         eventName: eventName || null,
         expectedVisitors: expectedVisitors || null,
-        notes: notes || null,
+        notes: (() => {
+          // slotMemosを保持してtextだけ更新
+          let parsed: any = {};
+          if (day.notes) {
+            try { parsed = JSON.parse(day.notes); } catch { parsed = {}; }
+          }
+          parsed.text = notes || "";
+          return JSON.stringify(parsed);
+        })(),
         employeeOnDuty: employeeOnDuty || null,
       }),
     });

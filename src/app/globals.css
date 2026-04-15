@@ -128,3 +128,33 @@
     @apply font-sans;
   }
 }
+
+/* 印刷用CSS */
+@media print {
+  /* ナビヘッダー・ボタン類・操作行を非表示 */
+  header,
+  .no-print,
+  tr.no-print {
+    display: none !important;
+  }
+
+  /* ページタイトル行（ダッシュボードリンク+ボタン群）を非表示 */
+  .flex.items-center.gap-4.mb-4 {
+    display: none !important;
+  }
+
+  /* 背景色を印刷に反映 */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+}

@@ -7,6 +7,7 @@ import { CastEditModal } from "./cast-edit-modal";
 import { DayInfoEditor } from "./day-info-editor";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 
 type Cast = { id: string; name: string };
 type ShiftSlot = {
@@ -114,6 +115,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   const [addDialog, setAddDialog] = useState<{ dayId: string; dayLabel: string } | null>(null);
   const [editDay, setEditDay] = useState<ShiftDay | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [editField, setEditField] = useState<{ dayId: string; dayLabel: string; field: "employeeOnDuty" | "expectedVisitors" | "notes" | "eventName"; label: string; value: string } | null>(null);
   const [memoView, setMemoView] = useState<{
     castName: string;
     memo: string;
@@ -215,7 +217,21 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   return (
     <div className="space-y-8">
       {weeks.map((week, weekIdx) => (
-        <div key={weekIdx} className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
+        <div key={weekIdx}>
+          {/* 営業情報ボタン行（テーブルの外） */}
+          <div className="flex no-print" style={{ paddingLeft: "38px" }}>
+            {week.map((day, idx) => (
+              <div key={day.id} className="flex-1 text-right px-0.5">
+                <button
+                  className="text-[7px] text-blue-500 hover:text-blue-700"
+                  onClick={() => setEditDay(day)}
+                >
+                  営業情報
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
           <table className="border-collapse text-xs w-full" style={{ tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "38px" }} />{/* 時間 */}
@@ -241,12 +257,19 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                     <th
                       key={day.id}
                       colSpan={4}
-                      className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] relative ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                     >
                       <span>{d.getDate()}</span>
-                      <span className="ml-1 text-[10px] font-normal">
-                        ({day.dayOfWeek})
-                      </span>
+                      <span className="ml-1 text-[10px] font-normal">({day.dayOfWeek})</span>
+                      <button
+                        className="absolute right-0 top-0 text-[7px] text-pink-500 hover:text-pink-700 font-bold px-0.5 no-print"
+                        onClick={() => {
+                          const label = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
+                          setAddDialog({ dayId: day.id, dayLabel: label });
+                        }}
+                      >
+                        追加シフト
+                      </button>
                     </th>
                   );
                 })}
@@ -273,8 +296,8 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                 const rowBg = timeRowBg(slot);
                 const hourBorder = isHourBoundary ? "border-t border-t-gray-400" : "border-t border-t-gray-200";
                 return (
-                  <tr key={slot} className={rowBg} style={{ height: "42px", maxHeight: "42px" }}>
-                    <td style={{ height: "42px" }} className={`border-r-[3px] border-gray-500 ${hourBorder} px-0.5 py-0 font-mono sticky left-0 z-10 text-[10px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
+                  <tr key={slot} className={rowBg} style={{ height: "28px", maxHeight: "28px" }}>
+                    <td style={{ height: "28px" }} className={`border-r-[3px] border-gray-500 ${hourBorder} px-0.5 py-0 font-mono sticky left-0 z-10 text-[10px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
                       {isHourBoundary ? `${Math.floor(slot)}:00` : `:30`}
                     </td>
                     {week.map((day, dayIdx) => {
@@ -298,7 +321,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
-                            <div style={{ height: "42px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                            <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                             {startCasts.map((s) => {
                               // ヘルプ出勤: 所属店舗が現在のシフト表と異なる場合「店舗名+名前」
                               const castInfo = allCasts.find((c) => c.id === s.castId);
@@ -365,7 +388,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
-                            <div style={{ height: "42px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                            <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                             {endCasts.map((s) => {
                               const endCastInfo = allCasts.find((c) => c.id === s.castId);
                               const endIsHelp = endCastInfo?.store?.name && endCastInfo.store.name !== data.store.name;
@@ -402,11 +425,11 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                             </div>
                           </td>
                           {/* 人数（グラデーション） */}
-                          <td style={{ boxShadow: "inset 1px 0 0 #d1d5db", height: "42px", maxHeight: "42px", ...countStyle(count) }} className={`${hourBorder} px-0 py-0 text-center font-bold text-[9px]`}>
+                          <td style={{ boxShadow: "inset 1px 0 0 #d1d5db", height: "28px", maxHeight: "28px", ...countStyle(count) }} className={`${hourBorder} px-0 py-0 text-center font-bold text-[9px]`}>
                             {count || ""}
                           </td>
                           {/* 管理者メモ（直接入力可能） */}
-                          <td style={{ boxShadow: `inset 1px 0 0 #d1d5db${!isLast ? ", inset -3px 0 0 #6b7280" : ""}`, height: "42px", maxHeight: "42px", overflow: "hidden" }} className={`${hourBorder} px-0 py-0 ${hasWorking ? "bg-amber-50/40" : ""}`}>
+                          <td style={{ boxShadow: `inset 1px 0 0 #d1d5db${!isLast ? ", inset -3px 0 0 #6b7280" : ""}`, height: "28px", maxHeight: "28px", overflow: "hidden" }} className={`${hourBorder} px-0 py-0 ${hasWorking ? "bg-amber-50/40" : ""}`}>
                             <SlotMemoInput dayId={day.id} timeSlot={slot} notes={day.notes} />
                           </td>
                         </React.Fragment>
@@ -416,74 +439,82 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                 );
               })}
 
-              {/* 集計セクション */}
-              <tr className="bg-emerald-50 border-t-2 border-gray-400">
-                <td className="border-r-[3px] border-gray-500 px-1 py-1.5 text-[10px] font-bold sticky left-0 bg-emerald-50 z-10 text-emerald-800">
-                  予算
+              {/* 集計1行目: 予算 | 時間 | 社員 */}
+              <tr className="bg-emerald-50 border-t-[3px] border-gray-500">
+                <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[7px] sticky left-0 bg-emerald-50 z-10 whitespace-nowrap">
+                  <span className="text-emerald-800 font-bold">予算</span><span className="text-sky-700 font-bold">/時間</span>
                 </td>
                 {week.map((day, dayIdx) => {
                   const budget = day.targetBudget;
-                  const isLast = dayIdx === week.length - 1;
-                  return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1.5 text-[11px] font-bold text-emerald-800 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                      {budget ? `¥${budget.toLocaleString()}` : "-"}
-                    </td>
-                  );
-                })}
-              </tr>
-              <tr className="bg-sky-50">
-                <td className="border-r-[3px] border-gray-500 px-1 py-1 text-[10px] font-bold sticky left-0 bg-sky-50 z-10 text-sky-800">
-                  総時間
-                </td>
-                {week.map((day, dayIdx) => {
                   const totalHours = day.shiftSlots.length * 0.5;
                   const isLast = dayIdx === week.length - 1;
                   return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1 text-[11px] font-bold text-sky-800 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                      {totalHours ? `${totalHours}h` : "-"}
-                    </td>
+                    <React.Fragment key={day.id}>
+                      <td className="px-0.5 py-0.5 text-[9px] font-bold text-emerald-800 whitespace-nowrap cursor-pointer hover:bg-emerald-100" onClick={() => setEditDay(day)}>
+                        {budget ? budget.toLocaleString() : "-"}
+                      </td>
+                      <td colSpan={2} className="px-0.5 py-0.5 text-[9px] font-bold text-sky-700 whitespace-nowrap">
+                        {totalHours || "-"}
+                      </td>
+                      <td className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap cursor-pointer hover:bg-purple-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                        onClick={() => {
+                          const dd = new Date(day.date);
+                          setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "eventName", label: "企画名", value: day.eventName || "" });
+                        }}
+                      >
+                        {day.eventName || "-"}
+                      </td>
+                    </React.Fragment>
                   );
                 })}
               </tr>
+              {/* 社員 */}
               <tr className="bg-orange-50">
-                <td className="border-r-[3px] border-gray-500 px-1 py-1 text-[10px] font-bold sticky left-0 bg-orange-50 z-10 text-orange-800">社員</td>
+                <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] font-bold sticky left-0 bg-orange-50 z-10 text-orange-800 whitespace-nowrap">社員</td>
                 {week.map((day, dayIdx) => {
                   const isLast = dayIdx === week.length - 1;
                   return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1 text-[10px] text-orange-800 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                    <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap cursor-pointer hover:bg-orange-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      onClick={() => {
+                        const dd = new Date(day.date);
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "employeeOnDuty", label: "社員", value: day.employeeOnDuty || "" });
+                      }}
+                    >
                       {day.employeeOnDuty || "-"}
                     </td>
                   );
                 })}
               </tr>
-              <tr className="bg-purple-50">
-                <td className="border-r-[3px] border-gray-500 px-1 py-1 text-[10px] font-bold sticky left-0 bg-purple-50 z-10 text-purple-800">企画名</td>
-                {week.map((day, dayIdx) => {
-                  const isLast = dayIdx === week.length - 1;
-                  return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1 text-[10px] text-purple-700 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                      {day.eventName || "-"}
-                    </td>
-                  );
-                })}
-              </tr>
+              {/* 来店予定 */}
               <tr>
-                <td className="border-r-[3px] border-gray-500 px-1 py-1 text-[10px] sticky left-0 bg-white z-10 text-gray-600">来店予定</td>
+                <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] sticky left-0 bg-white z-10 text-gray-600 whitespace-nowrap">来店予定</td>
                 {week.map((day, dayIdx) => {
                   const isLast = dayIdx === week.length - 1;
                   return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1 text-[10px] text-gray-600 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                    <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      onClick={() => {
+                        const dd = new Date(day.date);
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "expectedVisitors", label: "来店予定", value: day.expectedVisitors || "" });
+                      }}
+                    >
                       {day.expectedVisitors || "-"}
                     </td>
                   );
                 })}
               </tr>
               <tr>
-                <td className="border-r-[3px] border-gray-500 px-1 py-1 text-[10px] sticky left-0 bg-white z-10 text-gray-600">備考</td>
+                <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] sticky left-0 bg-white z-10 text-gray-600 whitespace-nowrap">備考</td>
                 {week.map((day, dayIdx) => {
                   const isLast = dayIdx === week.length - 1;
                   return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-0.5 text-[9px] text-gray-600 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                    <td key={day.id} colSpan={4} className={`px-1 py-0.5 text-[9px] text-gray-600 cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      onClick={() => {
+                        const dd = new Date(day.date);
+                        let notesVal = "";
+                        if (day.notes) { try { notesVal = JSON.parse(day.notes).text || ""; } catch { notesVal = day.notes; } }
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "notes", label: "備考", value: notesVal });
+                      }}
+                    >
                       {(() => {
                         let notesText = "-";
                         if (day.notes) {
@@ -513,33 +544,9 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                   );
                 })}
               </tr>
-              {/* 操作行 */}
-              <tr className="bg-gray-100 border-t border-gray-300">
-                <td className="border-r-[3px] border-gray-500 px-1 py-1.5 sticky left-0 bg-gray-100 z-10"></td>
-                {week.map((day, dayIdx) => {
-                  const d = new Date(day.date);
-                  const label = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
-                  const isLast = dayIdx === week.length - 1;
-                  return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-1.5 text-center ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                      <button
-                        className="text-[10px] text-pink-600 hover:text-pink-800 font-medium mr-2"
-                        onClick={() => setAddDialog({ dayId: day.id, dayLabel: label })}
-                      >
-                        + キャスト
-                      </button>
-                      <button
-                        className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
-                        onClick={() => setEditDay(day)}
-                      >
-                        日情報
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
             </tbody>
           </table>
+          </div>
         </div>
       ))}
 
@@ -590,7 +597,88 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
           }}
         />
       )}
+      {editField && (
+        <FieldEditModal
+          dayId={editField.dayId}
+          dayLabel={editField.dayLabel}
+          field={editField.field}
+          label={editField.label}
+          initialValue={editField.value}
+          onClose={() => setEditField(null)}
+          onSaved={reload}
+        />
+      )}
     </div>
+  );
+}
+
+// 個別フィールド編集モーダル
+function FieldEditModal({
+  dayId, dayLabel, field, label, initialValue, onClose, onSaved,
+}: {
+  dayId: string;
+  dayLabel: string;
+  field: "employeeOnDuty" | "expectedVisitors" | "notes" | "eventName";
+  label: string;
+  initialValue: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const updateData: Record<string, unknown> = {};
+    if (field === "notes") {
+      // notesの更新はupdateNotesText専用アクションで処理
+      await fetch("/api/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateNotesText", dayId, text: value || "" }),
+      });
+      setSaving(false);
+      onSaved();
+      onClose();
+      return;
+    } else {
+      updateData[field] = value || null;
+    }
+    await fetch("/api/shifts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "updateDay",
+        dayId,
+        ...updateData,
+      }),
+    });
+    setSaving(false);
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <Modal open title={`${dayLabel} - ${label}`} onClose={onClose}>
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label>{label}</Label>
+          <input
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={`${label}を入力`}
+            autoFocus
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
+        <Button variant="outline" onClick={onClose}>キャンセル</Button>
+        <Button onClick={handleSave} disabled={saving} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+          {saving ? "保存中..." : "保存"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -713,7 +801,7 @@ function SlotMemoInput({ dayId, timeSlot, notes }: { dayId: string; timeSlot: nu
         backgroundColor: bgColor,
         fontSize: `${fontSize}px`,
         lineHeight: "1.2",
-        height: "42px",
+        height: "28px",
         resize: "none",
         wordBreak: "break-all",
       }}

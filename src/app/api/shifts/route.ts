@@ -278,6 +278,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // 備考テキストだけ更新（slotMemosを保持）
+  if (action === "updateNotesText") {
+    const { text } = body;
+    const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
+    if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+
+    let parsed: any = {};
+    if (day.notes) {
+      try { parsed = JSON.parse(day.notes); } catch { parsed = {}; }
+    }
+    parsed.text = text || "";
+    await prisma.shiftDay.update({
+      where: { id: dayId },
+      data: { notes: JSON.stringify(parsed) },
+    });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "updateDay") {
     const { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty } = body;
     await prisma.shiftDay.update({
