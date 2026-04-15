@@ -21,7 +21,12 @@ export default async function AdjustmentsPage({
       store: true,
       shiftDays: {
         orderBy: { date: "asc" },
-        select: { id: true, date: true, dayOfWeek: true },
+        include: {
+          shiftSlots: {
+            include: { cast: { select: { id: true, name: true } } },
+            orderBy: { timeSlot: "asc" },
+          },
+        },
       },
     },
   });
@@ -33,16 +38,35 @@ export default async function AdjustmentsPage({
     where: { dayId: { in: dayIds } },
     include: {
       cast: { select: { id: true, name: true, store: { select: { name: true } } } },
-      day: { select: { date: true, dayOfWeek: true } },
+      day: { select: { id: true, date: true, dayOfWeek: true } },
     },
     orderBy: [{ day: { date: "asc" } }, { createdAt: "asc" }],
   });
+
+  // シフト希望データ
+  const shiftRequests = await prisma.shiftRequest.findMany({
+    where: { periodId },
+    select: { castId: true, date: true, startTime: true, endTime: true },
+  });
+
+  // dayIdマッピング
+  const dayMap = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
+  const requestsByDayAndCast = shiftRequests.map((r) => ({
+    castId: r.castId,
+    dayId: dayMap.get(new Date(r.date).toISOString().slice(0, 10)) || null,
+    startTime: r.startTime,
+    endTime: r.endTime,
+  }));
 
   const allCasts = await prisma.user.findMany({
     where: { role: "cast" },
     include: { store: { select: { name: true } } },
     orderBy: { name: "asc" },
   });
+
+  // 調整があるキャスト一覧
+  const adjustedCastIds = new Set(adjustments.map((a) => a.castId));
+  const adjustedCasts = allCasts.filter((c) => adjustedCastIds.has(c.id));
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
 
@@ -55,7 +79,7 @@ export default async function AdjustmentsPage({
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[1400px] mx-auto px-4 py-4">
+      <main className="max-w-[1800px] mx-auto px-4 py-4">
         <div className="flex items-center gap-4 mb-4">
           <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
             &larr; ダッシュボード
@@ -72,12 +96,15 @@ export default async function AdjustmentsPage({
         </div>
         <AdjustmentTable
           periodId={periodId}
-          days={period.shiftDays.map((d) => ({
-            id: d.id,
-            date: d.date.toISOString(),
-            dayOfWeek: d.dayOfWeek,
-          }))}
+          month={period.month}
+          days={JSON.parse(JSON.stringify(period.shiftDays))}
           initialAdjustments={JSON.parse(JSON.stringify(adjustments))}
+          shiftRequests={requestsByDayAndCast}
+          adjustedCasts={adjustedCasts.map((c) => ({
+            id: c.id,
+            name: c.name,
+            storeName: c.store?.name ?? null,
+          }))}
           allCasts={allCasts.map((c) => ({
             id: c.id,
             name: c.name,

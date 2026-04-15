@@ -1,13 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/modal";
+import React, { useState, useMemo } from "react";
 import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
 
-type Day = { id: string; date: string; dayOfWeek: string };
+type ShiftSlot = {
+  id: string;
+  timeSlot: number;
+  castId: string;
+  cast: { id: string; name: string };
+  isStart: boolean;
+  isEnd: boolean;
+  memo: string | null;
+};
+type Day = {
+  id: string;
+  date: string;
+  dayOfWeek: string;
+  shiftSlots: ShiftSlot[];
+};
 type Cast = { id: string; name: string; storeName: string | null };
 type Adjustment = {
   id: string;
@@ -20,350 +30,283 @@ type Adjustment = {
   action: string;
   reason: string | null;
   cast: { id: string; name: string; store: { name: string } | null };
-  day: { date: string; dayOfWeek: string };
+  day: { id: string; date: string; dayOfWeek: string };
+};
+type ShiftRequest = {
+  castId: string;
+  dayId: string | null;
+  startTime: number;
+  endTime: number;
 };
 
 type Props = {
   periodId: string;
+  month: number;
   days: Day[];
   initialAdjustments: Adjustment[];
+  shiftRequests: ShiftRequest[];
+  adjustedCasts: Cast[];
   allCasts: Cast[];
 };
 
+function dayHeaderBg(dow: string): string {
+  if (dow === "土") return "bg-sky-200 text-sky-800";
+  if (dow === "日" || dow === "祝") return "bg-pink-200 text-pink-800";
+  return "bg-purple-100/60 text-purple-800";
+}
+
 export function AdjustmentTable({
   periodId,
+  month,
   days,
   initialAdjustments,
+  shiftRequests,
+  adjustedCasts,
   allCasts,
 }: Props) {
-  const [adjustments, setAdjustments] = useState(initialAdjustments);
-  const [addModal, setAddModal] = useState(false);
-  const [castId, setCastId] = useState("");
-  const [dayId, setDayId] = useState("");
-  const [originalStart, setOriginalStart] = useState("20");
-  const [originalEnd, setOriginalEnd] = useState("25");
-  const [adjustedStart, setAdjustedStart] = useState("");
-  const [adjustedEnd, setAdjustedEnd] = useState("");
-  const [adjustAction, setAdjustAction] = useState("cut");
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [selectedCast, setSelectedCast] = useState(adjustedCasts[0]?.id || "");
+  const adjustments = initialAdjustments;
 
-  const reload = async () => {
-    const res = await fetch(`/api/adjustments?periodId=${periodId}`);
-    if (res.ok) setAdjustments(await res.json());
-  };
+  // 選択キャストの調整データ
+  const castAdjs = useMemo(() => {
+    return adjustments.filter((a) => a.castId === selectedCast);
+  }, [adjustments, selectedCast]);
 
-  const handleSubmit = async () => {
-    if (!castId || !dayId) return;
-    setSaving(true);
-
-    await fetch("/api/adjustments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create",
-        dayId,
-        castId,
-        originalStart: parseFloat(originalStart),
-        originalEnd: parseFloat(originalEnd),
-        adjustedStart: adjustedStart ? parseFloat(adjustedStart) : null,
-        adjustedEnd: adjustedEnd ? parseFloat(adjustedEnd) : null,
-        adjustAction,
-        reason: reason || null,
-      }),
+  // 選択キャストの希望データ（dayIdでマッピング）
+  const castRequests = useMemo(() => {
+    const map = new Map<string, { startTime: number; endTime: number }>();
+    shiftRequests.filter((r) => r.castId === selectedCast && r.dayId).forEach((r) => {
+      map.set(r.dayId!, { startTime: r.startTime, endTime: r.endTime });
     });
+    return map;
+  }, [shiftRequests, selectedCast]);
 
-    setSaving(false);
-    setAddModal(false);
-    setCastId("");
-    setDayId("");
-    setReason("");
-    reload();
-  };
+  // 選択キャストの現在のシフト（shiftSlotsから）
+  const castCurrentShifts = useMemo(() => {
+    const map = new Map<string, { startTime: number; endTime: number }>();
+    for (const day of days) {
+      const castSlots = day.shiftSlots
+        .filter((s) => s.castId === selectedCast)
+        .sort((a, b) => a.timeSlot - b.timeSlot);
+      if (castSlots.length > 0) {
+        map.set(day.id, {
+          startTime: castSlots[0].timeSlot,
+          endTime: castSlots[castSlots.length - 1].timeSlot + 0.5,
+        });
+      }
+    }
+    return map;
+  }, [days, selectedCast]);
 
-  const deleteAdj = async (id: string) => {
-    if (!confirm("この調整記録を削除しますか？")) return;
-    await fetch("/api/adjustments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", id }),
+  // 選択キャストの調整データ（dayIdでマッピング）
+  const adjByDay = useMemo(() => {
+    const map = new Map<string, Adjustment[]>();
+    castAdjs.forEach((a) => {
+      if (!map.has(a.dayId)) map.set(a.dayId, []);
+      map.get(a.dayId)!.push(a);
     });
-    reload();
-  };
+    return map;
+  }, [castAdjs]);
 
-  const actionLabel: Record<string, { label: string; color: string }> = {
-    cut: { label: "カット", color: "bg-red-100 text-red-700" },
-    shorten: { label: "短縮", color: "bg-yellow-100 text-yellow-700" },
-    move: { label: "時間変更", color: "bg-blue-100 text-blue-700" },
-  };
+  const castName = adjustedCasts.find((c) => c.id === selectedCast)?.name || "";
 
-  // 調整（shorten/move）と削除（cut）に分離
-  const adjusted = adjustments.filter((a) => a.action !== "cut");
-  const deleted = adjustments.filter((a) => a.action === "cut");
-  const [tab, setTab] = useState<"adjusted" | "deleted">("adjusted");
+  // 8日ずつ分割
+  const mid = Math.min(8, days.length);
+  const weeks = [days.slice(0, mid), days.slice(mid)];
 
   return (
     <div className="space-y-4">
+      {/* キャスト選択 */}
       <div className="flex items-center gap-3">
-        <Button
-          className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
-          onClick={() => setAddModal(true)}
+        <label className="text-sm font-bold text-purple-700">キャスト選択:</label>
+        <select
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm min-w-[200px]"
+          value={selectedCast}
+          onChange={(e) => setSelectedCast(e.target.value)}
         >
-          + 調整記録を追加
-        </Button>
+          {adjustedCasts.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}{c.storeName ? ` (${c.storeName})` : ""}
+            </option>
+          ))}
+        </select>
         <span className="text-sm text-gray-500">
-          調整: {adjusted.length}件 / 削除: {deleted.length}件
+          調整: {castAdjs.filter((a) => a.action !== "cut").length}件 / 削除: {castAdjs.filter((a) => a.action === "cut").length}件
         </span>
       </div>
 
-      {/* タブ切り替え */}
-      <div className="flex border-b border-gray-300">
-        <button
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === "adjusted"
-              ? "border-purple-500 text-purple-700"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-          onClick={() => setTab("adjusted")}
-        >
-          調整一覧（{adjusted.length}件）
-        </button>
-        <button
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === "deleted"
-              ? "border-red-500 text-red-700"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-          onClick={() => setTab("deleted")}
-        >
-          削除一覧（{deleted.length}件）
-        </button>
-      </div>
-
-      {/* 調整一覧タブ */}
-      {tab === "adjusted" && (
-        adjusted.length === 0 ? (
-          <div className="border border-gray-300 rounded-md px-3 py-8 text-center text-gray-400">
-            時間調整の記録はまだありません
-          </div>
-        ) : (
-          (() => {
-            const grouped = new Map<string, Adjustment[]>();
-            adjusted.forEach((a) => {
-              if (!grouped.has(a.castId)) grouped.set(a.castId, []);
-              grouped.get(a.castId)!.push(a);
-            });
-            return [...grouped.entries()].map(([castId, castAdjs]) => {
-              const cast = castAdjs[0].cast;
-              return (
-                <div key={castId} className="mb-4">
-                  <h3 className="text-sm font-bold text-purple-700 bg-purple-50 px-3 py-1.5 rounded-t-md border border-purple-200">
-                    {cast.name}
-                    <span className="text-xs font-normal text-purple-500 ml-2">
-                      {cast.store?.name || "未所属"} / {castAdjs.length}件
-                    </span>
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="border border-gray-300 px-3 py-1.5 text-left">日付</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center">希望時間</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center">アクション</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center">調整後</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-left">理由</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center w-16">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {castAdjs.map((a) => {
-                          const d = new Date(a.day.date);
-                          const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${a.day.dayOfWeek})`;
-                          const al = actionLabel[a.action] || actionLabel.move;
-                          return (
-                            <tr key={a.id} className="hover:bg-gray-50">
-                              <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-center">
-                                {formatTimeSlot(a.originalStart)} - {formatTimeSlot(a.originalEnd)}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-xs ${al.color}`}>{al.label}</span>
-                              </td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-center">
-                                {a.adjustedStart !== null && a.adjustedEnd !== null
-                                  ? `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}`
-                                  : "-"}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{a.reason || ""}</td>
-                              <td className="border border-gray-300 px-2 py-1.5 text-center">
-                                <button className="text-xs text-gray-400 hover:text-red-500" onClick={() => deleteAdj(a.id)}>削除</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            });
-          })()
-        )
-      )}
-
-      {/* 削除一覧タブ */}
-      {tab === "deleted" && (
-        deleted.length === 0 ? (
-          <div className="border border-gray-300 rounded-md px-3 py-8 text-center text-gray-400">
-            削除されたキャストはまだありません
-          </div>
-        ) : (
-          (() => {
-            const grouped = new Map<string, Adjustment[]>();
-            deleted.forEach((a) => {
-              if (!grouped.has(a.castId)) grouped.set(a.castId, []);
-              grouped.get(a.castId)!.push(a);
-            });
-            return [...grouped.entries()].map(([castId, castAdjs]) => {
-              const cast = castAdjs[0].cast;
-              return (
-                <div key={castId} className="mb-4">
-                  <h3 className="text-sm font-bold text-red-700 bg-red-50 px-3 py-1.5 rounded-t-md border border-red-200">
-                    {cast.name}
-                    <span className="text-xs font-normal text-red-500 ml-2">
-                      {cast.store?.name || "未所属"} / {castAdjs.length}件削除
-                    </span>
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-red-50/50">
-                          <th className="border border-gray-300 px-3 py-1.5 text-left">日付</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center">希望出勤</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center">希望退勤</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-left">理由</th>
-                          <th className="border border-gray-300 px-3 py-1.5 text-center w-16">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {castAdjs.map((a) => {
-                          const d = new Date(a.day.date);
-                          const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${a.day.dayOfWeek})`;
-                          return (
-                            <tr key={a.id} className="hover:bg-red-50/30">
-                              <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-center">{formatTimeSlot(a.originalStart)}</td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-center">{formatTimeSlot(a.originalEnd)}</td>
-                              <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{a.reason || ""}</td>
-                              <td className="border border-gray-300 px-2 py-1.5 text-center">
-                                <button className="text-xs text-gray-400 hover:text-red-500" onClick={() => deleteAdj(a.id)}>取消</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            });
-          })()
-        )
-      )}
-
-      {/* 調整追加モーダル */}
-      {addModal && (
-        <Modal open title="調整記録を追加" onClose={() => setAddModal(false)}>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>キャスト</Label>
-              <select
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                value={castId}
-                onChange={(e) => setCastId(e.target.value)}
-              >
-                <option value="">選択</option>
-                {allCasts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}{c.storeName ? ` (${c.storeName})` : ""}
-                  </option>
+      {/* シフト表形式の差分表示 */}
+      {weeks.map((week, weekIdx) => {
+        if (week.length === 0) return null;
+        return (
+          <div key={weekIdx} className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
+            <table className="border-collapse text-xs w-full" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "38px" }} />
+                {week.map((_, i) => (
+                  <React.Fragment key={i}>
+                    <col style={{ width: "60px" }} />{/* 希望 */}
+                    <col style={{ width: "60px" }} />{/* 確定 */}
+                  </React.Fragment>
                 ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label>日付</Label>
-              <select
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                value={dayId}
-                onChange={(e) => setDayId(e.target.value)}
-              >
-                <option value="">選択</option>
-                {days.map((d) => {
-                  const dt = new Date(d.date);
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className="border-r-[3px] border-b border-gray-500 px-1 py-0.5 sticky left-0 bg-gradient-to-b from-purple-600 to-pink-500 text-white z-20 text-[10px]">
+                  </th>
+                  {week.map((day, idx) => {
+                    const d = new Date(day.date);
+                    const bg = dayHeaderBg(day.dayOfWeek);
+                    const isLast = idx === week.length - 1;
+                    return (
+                      <th
+                        key={day.id}
+                        colSpan={2}
+                        className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      >
+                        {d.getDate()}({day.dayOfWeek})
+                      </th>
+                    );
+                  })}
+                </tr>
+                <tr className="bg-gray-100">
+                  <th className="border-r-[3px] border-b border-gray-300 px-0.5 py-0.5 sticky left-0 bg-gray-100 z-20 text-[8px] text-gray-500">時間</th>
+                  {week.map((day, dayIdx) => {
+                    const isLast = dayIdx === week.length - 1;
+                    return (
+                      <React.Fragment key={day.id}>
+                        <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-blue-600 bg-blue-50">希望</th>
+                        <th className={`border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-pink-600 bg-pink-50 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>確定</th>
+                      </React.Fragment>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {TIME_SLOTS.map((slot) => {
+                  const isHourBoundary = slot % 1 === 0;
+                  const hourBorder = isHourBoundary ? "border-t border-t-gray-400" : "border-t border-t-gray-200";
+
                   return (
-                    <option key={d.id} value={d.id}>
-                      {dt.getMonth() + 1}/{dt.getDate()}({d.dayOfWeek})
-                    </option>
+                    <tr key={slot} style={{ height: "20px" }}>
+                      <td className={`border-r-[3px] border-gray-500 ${hourBorder} px-0.5 py-0 font-mono sticky left-0 z-10 text-[10px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
+                        {isHourBoundary ? `${Math.floor(slot)}:00` : `:30`}
+                      </td>
+                      {week.map((day, dayIdx) => {
+                        const isLast = dayIdx === week.length - 1;
+                        const req = castRequests.get(day.id);
+                        const current = castCurrentShifts.get(day.id);
+                        const dayAdj = adjByDay.get(day.id);
+                        const isCut = dayAdj?.some((a) => a.action === "cut");
+
+                        // 希望セル: この時間が希望範囲内か
+                        const inRequest = req && slot >= req.startTime && slot < req.endTime;
+                        // 確定セル: この時間が現在のシフト範囲内か
+                        const inCurrent = current && slot >= current.startTime && slot < current.endTime;
+
+                        // 希望セルの色
+                        let reqBg = "";
+                        if (inRequest && isCut) {
+                          reqBg = "bg-red-100"; // 削除された希望
+                        } else if (inRequest) {
+                          reqBg = "bg-blue-100";
+                        }
+
+                        // 確定セルの色
+                        let curBg = "";
+                        if (isCut) {
+                          curBg = ""; // 削除済み→空
+                        } else if (inCurrent && inRequest) {
+                          curBg = "bg-pink-100"; // 希望通り
+                        } else if (inCurrent && !inRequest) {
+                          curBg = "bg-pink-300"; // 希望外の追加/変更
+                        }
+
+                        // 出勤/退勤マーク
+                        const isReqStart = inRequest && req && slot === req.startTime;
+                        const isReqEnd = inRequest && req && slot + 0.5 >= req.endTime;
+                        const isCurStart = inCurrent && current && slot === current.startTime;
+                        const isCurEnd = inCurrent && current && slot + 0.5 >= current.endTime;
+
+                        return (
+                          <React.Fragment key={day.id}>
+                            {/* 希望セル */}
+                            <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${reqBg}`} style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}>
+                              {isReqStart && <span className="text-blue-700 font-bold">{formatTimeSlot(req!.startTime)}</span>}
+                              {isReqEnd && !isReqStart && <span className="text-blue-500">{formatTimeSlot(req!.endTime)}</span>}
+                              {inRequest && !isReqStart && !isReqEnd && <span className="text-blue-300">│</span>}
+                              {isCut && isReqStart && <span className="line-through text-red-400 ml-0.5">削除</span>}
+                            </td>
+                            {/* 確定セル */}
+                            <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                              {isCurStart && <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>}
+                              {isCurEnd && !isCurStart && <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>}
+                              {inCurrent && !isCurStart && !isCurEnd && <span className="text-pink-300">│</span>}
+                              {isCut && inRequest && !inCurrent && <span className="text-red-400">×</span>}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
                   );
                 })}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label>元の出勤</Label>
-                <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" value={originalStart} onChange={(e) => setOriginalStart(e.target.value)}>
-                  {TIME_SLOTS.map((s) => <option key={s} value={s.toString()}>{formatTimeSlot(s)}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label>元の退勤</Label>
-                <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" value={originalEnd} onChange={(e) => setOriginalEnd(e.target.value)}>
-                  {TIME_SLOTS.filter((s) => s > parseFloat(originalStart)).map((s) => <option key={s} value={s.toString()}>{formatTimeSlot(s)}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>アクション</Label>
-              <select
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                value={adjustAction}
-                onChange={(e) => setAdjustAction(e.target.value)}
-              >
-                <option value="cut">カット（シフト削除）</option>
-                <option value="shorten">短縮</option>
-                <option value="move">時間変更</option>
-              </select>
-            </div>
-            {adjustAction !== "cut" && (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label>調整後 出勤</Label>
-                  <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" value={adjustedStart} onChange={(e) => setAdjustedStart(e.target.value)}>
-                    <option value="">-</option>
-                    {TIME_SLOTS.map((s) => <option key={s} value={s.toString()}>{formatTimeSlot(s)}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>調整後 退勤</Label>
-                  <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" value={adjustedEnd} onChange={(e) => setAdjustedEnd(e.target.value)}>
-                    <option value="">-</option>
-                    {TIME_SLOTS.filter((s) => s > parseFloat(adjustedStart || "19")).map((s) => <option key={s} value={s.toString()}>{formatTimeSlot(s)}</option>)}
-                  </select>
-                </div>
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label>理由</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="人数過多、予算調整など" />
-            </div>
+              </tbody>
+            </table>
           </div>
-          <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
-            <Button variant="outline" onClick={() => setAddModal(false)}>キャンセル</Button>
-            <Button onClick={handleSubmit} disabled={saving || !castId || !dayId} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
-              {saving ? "保存中..." : "追加"}
-            </Button>
-          </div>
-        </Modal>
+        );
+      })}
+
+      {/* テキスト形式の調整詳細 */}
+      {castAdjs.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-bold text-purple-700 mb-2">{castName} の調整詳細</h3>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="border border-gray-300 px-3 py-1.5 text-left">日付</th>
+                <th className="border border-gray-300 px-3 py-1.5 text-center">希望時間</th>
+                <th className="border border-gray-300 px-3 py-1.5 text-center">アクション</th>
+                <th className="border border-gray-300 px-3 py-1.5 text-center">調整後</th>
+                <th className="border border-gray-300 px-3 py-1.5 text-left">理由</th>
+              </tr>
+            </thead>
+            <tbody>
+              {castAdjs.map((a) => {
+                const d = new Date(a.day.date);
+                const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${a.day.dayOfWeek})`;
+                return (
+                  <tr key={a.id} className="hover:bg-gray-50">
+                    <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>
+                    <td className="border border-gray-300 px-3 py-1.5 text-center">
+                      {formatTimeSlot(a.originalStart)} - {formatTimeSlot(a.originalEnd)}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-1.5 text-center">
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${
+                        a.action === "cut" ? "bg-red-100 text-red-700" :
+                        a.action === "shorten" ? "bg-yellow-100 text-yellow-700" :
+                        "bg-blue-100 text-blue-700"
+                      }`}>
+                        {a.action === "cut" ? "カット" : a.action === "shorten" ? "短縮" : "時間変更"}
+                      </span>
+                    </td>
+                    <td className="border border-gray-300 px-3 py-1.5 text-center">
+                      {a.action === "cut" ? "削除" :
+                        a.adjustedStart !== null && a.adjustedEnd !== null ?
+                        `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}` : "-"}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{a.reason || ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {adjustedCasts.length === 0 && (
+        <div className="border border-gray-300 rounded-md px-3 py-8 text-center text-gray-400">
+          調整されたキャストはまだいません
+        </div>
       )}
     </div>
   );
