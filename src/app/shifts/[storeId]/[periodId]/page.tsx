@@ -138,6 +138,12 @@ export default async function ShiftPage({
           </h1>
           <div className="ml-auto flex items-center gap-2">
             <Link
+              href={`/confirmed/${storeId}/${periodId}`}
+              className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 border border-purple-200 rounded"
+            >
+              確定シフト
+            </Link>
+            <Link
               href={`/requests/${storeId}/${periodId}`}
               className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 border border-blue-200 rounded"
             >
