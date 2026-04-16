@@ -25,6 +25,7 @@ export default async function RequestsPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
+  // この期間の希望 + 所属キャストの他店舗ヘルプ希望
   const requests = await prisma.shiftRequest.findMany({
     where: { periodId },
     include: {
@@ -32,6 +33,39 @@ export default async function RequestsPage({
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
+
+  // この店舗所属キャストの他店舗での希望
+  const storeCasts = await prisma.user.findMany({
+    where: { storeId, role: "cast" },
+    select: { id: true },
+  });
+  const storeCastIds = storeCasts.map((c) => c.id);
+
+  const otherRequests = await prisma.shiftRequest.findMany({
+    where: {
+      castId: { in: storeCastIds },
+      period: {
+        year: period.year,
+        month: period.month,
+        half: period.half,
+        storeId: { not: storeId },
+      },
+    },
+    include: {
+      cast: { select: { id: true, name: true, store: { select: { name: true } } } },
+      period: { select: { store: { select: { name: true } } } },
+    },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
+  });
+
+  // ヘルプ先店舗名をnotesに追加して区別
+  const allRequests = [
+    ...requests,
+    ...otherRequests.map((r) => ({
+      ...r,
+      notes: r.notes ? `[${r.period.store.name}] ${r.notes}` : `[${r.period.store.name}ヘルプ]`,
+    })),
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   const allCasts = await prisma.user.findMany({
     where: { role: "cast" },
@@ -73,7 +107,7 @@ export default async function RequestsPage({
             date: d.date.toISOString(),
             dayOfWeek: d.dayOfWeek,
           }))}
-          initialRequests={JSON.parse(JSON.stringify(requests))}
+          initialRequests={JSON.parse(JSON.stringify(allRequests))}
           allCasts={allCasts.map((c) => ({
             id: c.id,
             name: c.name,

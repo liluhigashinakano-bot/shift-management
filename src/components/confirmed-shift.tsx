@@ -35,10 +35,14 @@ type Period = {
   shiftDays: ShiftDay[];
 };
 
+type HelpSlot = { castId: string; castName: string; storeName: string; timeSlot: number; isStart: boolean; isEnd: boolean };
+
 type Props = {
   initialData: Period;
   assignedCasts: { id: string; name: string }[];
   allCasts: { id: string; name: string; store: { name: string } | null }[];
+  helpSlotsByDay?: Record<string, HelpSlot[]>;
+  storeName?: string;
 };
 
 function dayHeaderBg(dow: string): string {
@@ -80,19 +84,40 @@ function countStyle(count: number): React.CSSProperties {
   return { backgroundColor: bg, color: fg };
 }
 
-export function ConfirmedShift({ initialData, assignedCasts, allCasts }: Props) {
+export function ConfirmedShift({ initialData, assignedCasts, allCasts, helpSlotsByDay, storeName }: Props) {
   const [selectedCast, setSelectedCast] = useState("");
   const [showSendList, setShowSendList] = useState(false);
   const data = initialData;
 
-  // 選択キャストでフィルタしたデータ
+  // ヘルプスロットをマージしたデータ
+  const mergedDays = useMemo(() => {
+    return data.shiftDays.map((day) => {
+      const helpSlots = helpSlotsByDay?.[day.id] || [];
+      const mergedSlots = [
+        ...day.shiftSlots,
+        ...helpSlots.map((h) => ({
+          id: `help_${h.castId}_${h.timeSlot}`,
+          timeSlot: h.timeSlot,
+          castId: h.castId,
+          cast: { id: h.castId, name: h.castName },
+          isStart: h.isStart,
+          isEnd: h.isEnd,
+          memo: null,
+          _helpStore: h.storeName,
+        })),
+      ];
+      return { ...day, shiftSlots: mergedSlots };
+    });
+  }, [data.shiftDays, helpSlotsByDay]);
+
+  // 選択キャストでフィルタ
   const filteredDays = useMemo(() => {
-    if (!selectedCast) return data.shiftDays;
-    return data.shiftDays.map((day) => ({
+    if (!selectedCast) return mergedDays;
+    return mergedDays.map((day) => ({
       ...day,
       shiftSlots: day.shiftSlots.filter((s) => s.castId === selectedCast),
     }));
-  }, [data.shiftDays, selectedCast]);
+  }, [mergedDays, selectedCast]);
 
   const mid = Math.min(8, filteredDays.length);
   const weeks = [filteredDays.slice(0, mid), filteredDays.slice(mid)];
@@ -201,13 +226,20 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts }: Props) 
                             >
                               <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                                 {startCasts.map((s) => {
+                                  const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
-                                  const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
-                                  const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
+                                  const isHelp = helpStore || (castInfo?.store?.name && castInfo.store.name !== data.store.name);
+                                  const displayName = helpStore
+                                    ? `→${helpStore} ${s.cast.name}`
+                                    : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
+                                      ? `${castInfo!.store!.name}${s.cast.name}`
+                                      : s.cast.name;
+                                  const tagBg = helpStore ? "#fef3c7" : "#fbcfe8"; // ヘルプ先は黄色系
+                                  const tagColor = helpStore ? "#92400e" : "#9d174d";
                                   return (
                                     <span
-                                      key={s.castId}
-                                      style={{ backgroundColor: "#fbcfe8", color: "#9d174d", fontSize: "9px" }}
+                                      key={s.castId + (helpStore || "")}
+                                      style={{ backgroundColor: tagBg, color: tagColor, fontSize: "9px" }}
                                       className="inline-block rounded px-1 py-0 mr-0.5 font-medium leading-tight whitespace-nowrap"
                                     >
                                       {displayName}
@@ -222,12 +254,16 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts }: Props) 
                             >
                               <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                                 {endCasts.map((s) => {
+                                  const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
-                                  const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
-                                  const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
+                                  const displayName = helpStore
+                                    ? `→${helpStore} ${s.cast.name}`
+                                    : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
+                                      ? `${castInfo!.store!.name}${s.cast.name}`
+                                      : s.cast.name;
                                   return (
                                     <span
-                                      key={s.castId}
+                                      key={s.castId + (helpStore || "")}
                                       style={{ backgroundColor: "#e5e7eb", color: "#4b5563", fontSize: "9px" }}
                                       className="inline-block rounded px-1 py-0 mr-0.5 leading-tight whitespace-nowrap"
                                     >
@@ -293,7 +329,7 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts }: Props) 
       {showSendList && selectedCast && (
         <SendListModal
           castName={assignedCasts.find((c) => c.id === selectedCast)?.name || ""}
-          days={data.shiftDays}
+          days={mergedDays}
           castId={selectedCast}
           month={data.month}
           onClose={() => setShowSendList(false)}

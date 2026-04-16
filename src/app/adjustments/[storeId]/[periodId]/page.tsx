@@ -43,15 +43,80 @@ export default async function AdjustmentsPage({
     orderBy: [{ day: { date: "asc" } }, { createdAt: "asc" }],
   });
 
-  // シフト希望データ
+  // 所属キャストの他店舗での調整も取得
+  const storeCasts = await prisma.user.findMany({
+    where: { storeId, role: "cast" },
+    select: { id: true },
+  });
+  const storeCastIds = storeCasts.map((c) => c.id);
+
+  const otherPeriods = await prisma.shiftPeriod.findMany({
+    where: {
+      year: period.year, month: period.month, half: period.half,
+      storeId: { not: storeId },
+    },
+    include: {
+      store: { select: { name: true } },
+      shiftDays: { select: { id: true, date: true, dayOfWeek: true, shiftSlots: { where: { castId: { in: storeCastIds } }, include: { cast: { select: { id: true, name: true } } }, orderBy: { timeSlot: "asc" } } } },
+    },
+  });
+
+  // 他店舗の調整
+  const otherDayIds: string[] = [];
+  for (const op of otherPeriods) {
+    for (const d of op.shiftDays) {
+      otherDayIds.push(d.id);
+    }
+  }
+  const otherAdjustments = await prisma.shiftAdjustment.findMany({
+    where: { dayId: { in: otherDayIds }, castId: { in: storeCastIds } },
+    include: {
+      cast: { select: { id: true, name: true, store: { select: { name: true } } } },
+      day: { select: { id: true, date: true, dayOfWeek: true } },
+    },
+    orderBy: [{ day: { date: "asc" } }, { createdAt: "asc" }],
+  });
+
+  const allAdjustments = [...adjustments, ...otherAdjustments];
+
+  // シフト希望データ（自店舗 + 他店舗の所属キャスト分）
   const shiftRequests = await prisma.shiftRequest.findMany({
     where: { periodId },
     select: { castId: true, date: true, startTime: true, endTime: true },
   });
 
+  // 他店舗のシフト希望
+  const otherPeriodIds = otherPeriods.map((op) => op.id);
+  const otherShiftRequests = await prisma.shiftRequest.findMany({
+    where: { periodId: { in: otherPeriodIds }, castId: { in: storeCastIds } },
+    select: { castId: true, date: true, startTime: true, endTime: true },
+  });
+
+  const allShiftRequests = [...shiftRequests, ...otherShiftRequests];
+
+  // 他店舗のスロットを自店舗のdaysにマージ
+  for (const op of otherPeriods) {
+    for (const opDay of op.shiftDays) {
+      const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
+      const myDay = period.shiftDays.find((d) => new Date(d.date).toISOString().slice(0, 10) === dateKey);
+      if (myDay && opDay.shiftSlots.length > 0) {
+        (myDay.shiftSlots as any[]).push(...opDay.shiftSlots);
+      }
+    }
+  }
+
   // dayIdマッピング
   const dayMap = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
-  const requestsByDayAndCast = shiftRequests.map((r) => ({
+  // 他店舗のdayIdも自店舗のdayIdにマッピング
+  for (const op of otherPeriods) {
+    for (const opDay of op.shiftDays) {
+      const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, opDay.id);
+      }
+    }
+  }
+  const requestsByDayAndCast = allShiftRequests.map((r) => ({
     castId: r.castId,
     dayId: dayMap.get(new Date(r.date).toISOString().slice(0, 10)) || null,
     startTime: r.startTime,
@@ -65,7 +130,7 @@ export default async function AdjustmentsPage({
   });
 
   // 調整があるキャスト一覧
-  const adjustedCastIds = new Set(adjustments.map((a) => a.castId));
+  const adjustedCastIds = new Set(allAdjustments.map((a) => a.castId));
   const adjustedCasts = allCasts.filter((c) => adjustedCastIds.has(c.id));
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
@@ -98,7 +163,7 @@ export default async function AdjustmentsPage({
           periodId={periodId}
           month={period.month}
           days={JSON.parse(JSON.stringify(period.shiftDays))}
-          initialAdjustments={JSON.parse(JSON.stringify(adjustments))}
+          initialAdjustments={JSON.parse(JSON.stringify(allAdjustments))}
           shiftRequests={requestsByDayAndCast}
           adjustedCasts={adjustedCasts.map((c) => ({
             id: c.id,

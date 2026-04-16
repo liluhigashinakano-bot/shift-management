@@ -33,13 +33,73 @@ export default async function ConfirmedPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
-  // シフトに入っているキャスト一覧（重複排除）
+  // この店舗のシフトに入っているキャスト一覧
   const castMap = new Map<string, string>();
   for (const day of period.shiftDays) {
     for (const slot of day.shiftSlots) {
       castMap.set(slot.castId, slot.cast.name);
     }
   }
+
+  // この店舗所属キャストの他店舗ヘルプ出勤も取得
+  const storeCasts = await prisma.user.findMany({
+    where: { storeId, role: "cast" },
+    select: { id: true, name: true },
+  });
+  const storeCastIds = storeCasts.map((c) => c.id);
+
+  // 他店舗のシフト期間から所属キャストのスロットを取得
+  const otherPeriods = await prisma.shiftPeriod.findMany({
+    where: {
+      year: period.year,
+      month: period.month,
+      half: period.half,
+      storeId: { not: storeId },
+    },
+    include: {
+      store: { select: { name: true } },
+      shiftDays: {
+        orderBy: { date: "asc" },
+        include: {
+          shiftSlots: {
+            where: { castId: { in: storeCastIds } },
+            include: { cast: { select: { id: true, name: true } } },
+            orderBy: { timeSlot: "asc" },
+          },
+        },
+      },
+    },
+  });
+
+  // ヘルプ出勤情報を自店舗のday構造にマージ
+  // dayIdマッピング（同じ日付の自店舗dayId）
+  const dayDateMap = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
+
+  type HelpSlot = { castId: string; castName: string; storeName: string; timeSlot: number; isStart: boolean; isEnd: boolean };
+  const helpSlotsByDay = new Map<string, HelpSlot[]>();
+
+  for (const op of otherPeriods) {
+    for (const opDay of op.shiftDays) {
+      if (opDay.shiftSlots.length === 0) continue;
+      const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
+      const myDayId = dayDateMap.get(dateKey);
+      if (!myDayId) continue;
+
+      if (!helpSlotsByDay.has(myDayId)) helpSlotsByDay.set(myDayId, []);
+      for (const slot of opDay.shiftSlots) {
+        castMap.set(slot.castId, slot.cast.name); // キャスト一覧にも追加
+        helpSlotsByDay.get(myDayId)!.push({
+          castId: slot.castId,
+          castName: slot.cast.name,
+          storeName: op.store.name,
+          timeSlot: slot.timeSlot,
+          isStart: slot.isStart,
+          isEnd: slot.isEnd,
+        });
+      }
+    }
+  }
+
   const assignedCasts = [...castMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
   const allCasts = await prisma.user.findMany({
@@ -75,6 +135,8 @@ export default async function ConfirmedPage({
           initialData={JSON.parse(JSON.stringify(period))}
           assignedCasts={assignedCasts}
           allCasts={allCasts.map((c) => ({ id: c.id, name: c.name, store: c.store }))}
+          helpSlotsByDay={JSON.parse(JSON.stringify(Object.fromEntries(helpSlotsByDay)))}
+          storeName={period.store.name}
         />
       </main>
     </div>
