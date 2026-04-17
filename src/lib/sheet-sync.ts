@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { readSheet, writeSheet, writeCell, isSheetsConfigured } from "./google-sheets";
-import { TIME_SLOTS, formatTimeSlot } from "./shift-utils";
+import { TIME_SLOTS, displaySlotForClockOut, formatTimeSlot } from "./shift-utils";
 
 // Google Sheetsのシート構造（Excel準拠）
 // Row 2: 日付番号（B2, H2, N2, T2, Z2, AF2, AL2, AR2）
@@ -81,9 +81,13 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
             .filter((s) => s.isStart)
             .map((s) => s.cast.name)
             .join("\n");
-          // 退勤キャスト名（希望退勤29:00のときは名前を出さない）
-          const endCasts = slotsAtTime
-            .filter((s) => s.isEnd)
+          // 退勤キャスト名（整数時退勤は :00 行に合わせる／希望退勤29:00は名前を出さない）
+          const endCasts = day.shiftSlots
+            .filter(
+              (s) =>
+                s.isEnd &&
+                displaySlotForClockOut(day.shiftSlots, s.castId) === slot,
+            )
             .filter((s) => !hideEndNameSet.has(`${s.castId}|${dateKey}`))
             .map((s) => s.cast.name)
             .join("\n");

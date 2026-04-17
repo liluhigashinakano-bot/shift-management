@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from "react";
 import {
   TIME_SLOTS,
+  displaySlotForClockOut,
   formatTimeSlot,
   getJapaneseDayOfWeek,
   hideEndCastNameForWishEnd29,
@@ -370,7 +371,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
 
                       const daySlots = day.shiftSlots.filter((s) => s.timeSlot === slot);
                       const startCasts = daySlots.filter((s) => s.isStart);
-                      const endCasts = daySlots.filter((s) => s.isEnd);
+                      const endCasts = day.shiftSlots.filter((s) => {
+                        if (!s.isEnd) return false;
+                        return displaySlotForClockOut(day.shiftSlots, s.castId) === slot;
+                      });
                       const count = daySlots.length;
                       const memos = daySlots.filter((s) => s.memo).map((s) => s.memo);
 

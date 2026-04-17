@@ -13,6 +13,25 @@ export function hideEndCastNameForWishEnd29(endTime: number): boolean {
   return endTime === 29;
 }
 
+/**
+ * 退勤キャスト名を出す行の timeSlot（TIME_SLOTS の要素と一致）。
+ * 退勤時刻が整数時（例 20:00, 24:00）のときはその :00 行（timeSlot = 時）に表示する。
+ * 半時（例 20:30, 24:30）のときは従来どおり isEnd が付いている行（最後の勤務スロット）に合わせる。
+ */
+export function displaySlotForClockOut(
+  daySlots: { timeSlot: number; castId: string }[],
+  castId: string,
+): number | null {
+  const castSlots = daySlots
+    .filter((s) => s.castId === castId)
+    .sort((a, b) => a.timeSlot - b.timeSlot);
+  if (castSlots.length === 0) return null;
+  const last = castSlots[castSlots.length - 1];
+  const clockOutEnd = last.timeSlot + 0.5;
+  if (clockOutEnd % 1 === 0) return clockOutEnd;
+  return last.timeSlot;
+}
+
 // 日付を "M/D" 形式に
 export function formatDate(date: Date): string {
   const d = new Date(date);

@@ -86,3 +86,18 @@
 **Git:** コミット `ebee607` / `main` / push 済み
 
 ---
+
+### 2026-04-18（退勤列の表示行）
+
+**概要:** 退勤が**整数時**（例 20:00, 24:00）のとき、DB 上の `isEnd` は直前の半時スロットに付くが、画面上の退勤列は**その時刻の :00 行**にキャスト名を表示する。`displaySlotForClockOut` を `shift-utils` に追加し、シフト編集グリッド・確定シフト表・Google Sheets 同期（DB→シート）で共通利用。
+
+**変更ファイル（主なもの）:**
+- `src/lib/shift-utils.ts`
+- `src/components/shift-grid/shift-grid.tsx`
+- `src/components/confirmed-shift.tsx`
+- `src/lib/sheet-sync.ts`
+- `docs/WORK_LOG.md`
+
+**Git:** （本コミットで追記）
+
+---
