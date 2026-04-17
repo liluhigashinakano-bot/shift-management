@@ -86,7 +86,6 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
             type="number"
             value={targetBudget}
             onChange={(e) => setTargetBudget(e.target.value)}
-            placeholder="6500"
           />
         </div>
         <div className="space-y-1">
@@ -94,7 +93,6 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={employeeOnDuty}
             onChange={(e) => setEmployeeOnDuty(e.target.value)}
-            placeholder="吉田, ナビ"
           />
         </div>
         <div className="space-y-1">
@@ -102,7 +100,6 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={eventName}
             onChange={(e) => setEventName(e.target.value)}
-            placeholder="GWイベント"
           />
         </div>
         <div className="space-y-1">
