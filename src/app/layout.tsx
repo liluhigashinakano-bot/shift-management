@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Kosugi_Maru } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/** Google Fonts — 小杉丸（日本語 UI 向けの丸ゴシック） */
+const kosugiMaru = Kosugi_Maru({
+  weight: "400",
   subsets: ["latin"],
+  variable: "--font-kosugi-maru",
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -27,7 +30,7 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${kosugiMaru.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-gradient-to-br from-pink-50/50 via-purple-50/30 to-sky-50/50">
         <Providers>{children}</Providers>

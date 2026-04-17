@@ -58,3 +58,16 @@
 **Git:** コミット `a37f0f8` / `main` / push 済み
 
 ---
+
+### 2026-04-18（フォント）
+
+**概要:** 全体のサンセリフを Google Fonts の **Kosugi Maru（小杉丸）** に変更。`next/font/google` の `Kosugi_Maru` を `--font-kosugi-maru` で適用し、`globals.css` の `--font-sans` を接続。等幅は従来どおり `Geist_Mono`。
+
+**変更ファイル（主なもの）:**
+- `src/app/layout.tsx`
+- `src/app/globals.css`
+- `docs/WORK_LOG.md`
+
+**Git:** （本コミットで追記）
+
+---
