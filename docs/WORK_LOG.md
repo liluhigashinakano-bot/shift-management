@@ -98,6 +98,6 @@
 - `src/lib/sheet-sync.ts`
 - `docs/WORK_LOG.md`
 
-**Git:** （本コミットで追記）
+**Git:** コミット `e7a73c1` / `main` / push 済み
 
 ---
