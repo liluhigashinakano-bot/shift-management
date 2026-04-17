@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Kosugi_Maru } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
@@ -22,6 +22,18 @@ export const metadata: Metadata = {
   description: "ガールズバー7店舗のシフト管理システム",
 };
 
+/** スマホ・タブレット向け: セーフエリア・ピンチズーム許可など */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fdf4ff" },
+    { media: "(prefers-color-scheme: dark)", color: "#18181b" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -32,7 +44,7 @@ export default function RootLayout({
       lang="ja"
       className={`${kosugiMaru.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-gradient-to-br from-pink-50/50 via-purple-50/30 to-sky-50/50">
+      <body className="min-h-dvh flex flex-col bg-gradient-to-br from-pink-50/50 via-purple-50/30 to-sky-50/50">
         <Providers>{children}</Providers>
         <Toaster />
       </body>

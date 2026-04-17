@@ -38,7 +38,7 @@ export default async function MypagePage() {
     if (latest?.storeId) redirect(`/requests/${latest.storeId}/${latest.id}`);
 
     return (
-      <div className="min-h-screen">
+      <div className="min-h-dvh">
         <NavHeader
           user={{
             name: session.user.name,
@@ -46,7 +46,7 @@ export default async function MypagePage() {
             storeName: (session.user as any).storeName,
           }}
         />
-        <main className="max-w-[600px] mx-auto px-4 py-8">
+        <main className="max-w-[600px] mx-auto w-full min-w-0 px-3 sm:px-4 py-8">
           <h1 className="text-xl font-bold mb-2">マイページ</h1>
           <p className="text-sm text-gray-600">
             シフト期間がまだ登録されていません。管理者が期間を作成すると、ここから希望シフトに進めます。
@@ -81,7 +81,7 @@ export default async function MypagePage() {
   });
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
@@ -89,7 +89,7 @@ export default async function MypagePage() {
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[1200px] mx-auto px-4 py-4">
+      <main className="max-w-[1200px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-2">
           マイページ - {user.name}
         </h1>

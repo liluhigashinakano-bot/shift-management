@@ -141,7 +141,7 @@ export default async function DashboardPage({
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
@@ -149,9 +149,9 @@ export default async function DashboardPage({
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[1800px] mx-auto px-4 py-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
-          <h1 className="text-2xl font-bold">
+      <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4 mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold break-words">
             {effectiveDisplayPeriods[0].year}年{effectiveDisplayPeriods[0].month}月 {halfLabel(effectiveDisplayPeriods[0].half)}〜
             {effectiveDisplayPeriods.length === 2
               ? `${effectiveDisplayPeriods[1].year !== effectiveDisplayPeriods[0].year ? effectiveDisplayPeriods[1].year + "年" : ""}${effectiveDisplayPeriods[1].month}月${halfLabel(effectiveDisplayPeriods[1].half)}`
@@ -159,7 +159,7 @@ export default async function DashboardPage({
             {' '}シフト管理
           </h1>
 
-          <form method="get" className="flex items-center gap-3">
+          <form method="get" className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <label className="text-sm font-bold text-gray-600">
               年
               <select name="year" defaultValue={String(selectedYear)} className="ml-2 border border-gray-300 rounded-md px-2 py-1 text-sm">

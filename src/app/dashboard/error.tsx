@@ -8,7 +8,7 @@ export default function DashboardError({
   reset: () => void;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
+    <div className="min-h-dvh flex items-center justify-center p-6">
       <div className="max-w-xl w-full border border-gray-200 rounded-lg p-6 bg-white space-y-3">
         <div className="text-lg font-bold text-gray-800">ダッシュボードでエラーが発生しました</div>
         <div className="text-sm text-gray-600">

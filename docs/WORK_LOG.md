@@ -71,3 +71,18 @@
 **Git:** コミット `c7075db` / `main` / push 済み
 
 ---
+
+### 2026-04-18（レスポンシブ・モバイル）
+
+**概要:** スマホ・タブレット利用を想定し、viewport（`viewportFit: cover`・最大ズーム 5）、セーフエリア、`100dvh`、横スクロール抑止、タップ最適化（`touch-action: manipulation`）を追加。ヘッダーは `md` 未満でハンバーガー＋シートメニュー。各ページの `main` に `w-full min-w-0` と段階的パディング。
+
+**変更ファイル（主なもの）:**
+- `src/app/layout.tsx`
+- `src/app/globals.css`
+- `src/components/nav-header.tsx`
+- `src/app/dashboard/page.tsx`（タイトル・フィルタの折り返し）
+- 各 `page.tsx`（`min-h-dvh`、`main` のパディング）
+
+**Git:** （本コミットで追記）
+
+---

@@ -20,7 +20,7 @@ export default async function CastsPage() {
   const stores = await prisma.store.findMany({ orderBy: { name: "asc" } });
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
@@ -28,7 +28,7 @@ export default async function CastsPage() {
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[1200px] mx-auto px-4 py-4">
+      <main className="max-w-[1200px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-4">在籍キャスト一覧</h1>
         <CastManager
           initialCasts={JSON.parse(JSON.stringify(casts))}

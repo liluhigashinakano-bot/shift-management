@@ -160,7 +160,7 @@ export default async function AdjustmentsPage({
   const halfLabel = period.half === "first" ? "前半" : "後半";
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
@@ -168,7 +168,7 @@ export default async function AdjustmentsPage({
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[1800px] mx-auto px-4 py-4">
+      <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <div className="flex items-center gap-4 mb-4">
           {role !== "cast" && (
             <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">

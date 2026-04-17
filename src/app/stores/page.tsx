@@ -16,7 +16,7 @@ export default async function StoresPage() {
   });
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
@@ -24,7 +24,7 @@ export default async function StoresPage() {
           storeName: (session.user as any).storeName,
         }}
       />
-      <main className="max-w-[800px] mx-auto px-4 py-4">
+      <main className="max-w-[800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-4">店舗管理</h1>
         <StoreManager
           initialStores={stores.map((s) => ({

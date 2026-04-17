@@ -121,11 +121,34 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    /* モバイルで文字だけ拡大されないよう調整 */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* 横スクロール抑止（表は各ブロック内で overflow-x-auto） */
+    overflow-x: hidden;
+    min-height: 100dvh;
+    min-height: 100vh;
+  }
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100dvh;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    /* ノッチ・ホームインジケータ周りの余白 */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    /* レイアウト body の pb と二重にならないよう、下は body 側でまとめてもよい */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* タップの反応を優先（ダブルタップズーム遅延の軽減に寄与） */
+  button,
+  [role="button"],
+  a[href],
+  input[type="submit"],
+  label[for] {
+    touch-action: manipulation;
   }
 }
 
