@@ -67,7 +67,12 @@ export function NavHeader({ user }: Props) {
           <button
             type="button"
             className="text-gray-400 hover:text-gray-600 text-xs"
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() =>
+              signOut({
+                // 0.0.0.0:PORT など内部URLに引っ張られないよう、実際に開いているURL基準で絶対URLにする
+                callbackUrl: `${window.location.origin}/login`,
+              })
+            }
           >
             ログアウト
           </button>
