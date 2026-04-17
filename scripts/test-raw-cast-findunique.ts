@@ -22,7 +22,7 @@ async function main() {
       'cast',
       ${cid},
       ${storeId},
-      datetime('now')
+      CURRENT_TIMESTAMP
     )
   `;
 

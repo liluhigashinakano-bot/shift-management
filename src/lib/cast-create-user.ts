@@ -3,8 +3,8 @@ import { hashSync } from "bcryptjs";
 import { prisma } from "@/lib/db";
 
 /**
- * Prisma の user.create が SQLite アダプターで Invalid になる環境向けに、
  * INSERT は生 SQL、取得は id の findUnique のみ行う。
+ * createdAt は PostgreSQL では CURRENT_TIMESTAMP（SQLite の datetime('now') は使わない）。
  */
 export async function createCastUserRecord(input: {
   name: string;
@@ -32,7 +32,7 @@ export async function createCastUserRecord(input: {
       'cast',
       ${input.castLoginId},
       ${input.storeId},
-      datetime('now')
+      CURRENT_TIMESTAMP
     )
   `;
 
