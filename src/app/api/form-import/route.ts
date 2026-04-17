@@ -4,6 +4,7 @@ import { readSheet, isSheetsConfigured } from "@/lib/google-sheets";
 import { auth } from "@/lib/auth";
 import { normalizeSheetDateToYmd } from "@/lib/sheet-date";
 import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
+import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
 
 function requireStaff(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
 
   const lockedRes = await assertShiftRequestsUnlocked(periodId);
   if (lockedRes) return lockedRes;
+  const slotLockedRes = await assertShiftSlotsUnlocked(periodId);
+  if (slotLockedRes) return slotLockedRes;
 
   try {
     // Googleフォームの回答シートを読み取り

@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 
-export function SyncButtons({ periodId }: { periodId: string }) {
+export function SyncButtons({
+  periodId,
+  sheetsImportDisabled = false,
+}: {
+  periodId: string;
+  /** シフト追加締切中は Sheets 取込を無効化 */
+  sheetsImportDisabled?: boolean;
+}) {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
@@ -35,9 +42,11 @@ export function SyncButtons({ periodId }: { periodId: string }) {
         {syncing === "toSheets" ? "同期中..." : "Sheets書出"}
       </button>
       <button
+        type="button"
+        title={sheetsImportDisabled ? "シフト追加締切中は取込できません" : undefined}
         className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 border border-purple-200 rounded disabled:opacity-50"
         onClick={() => sync("fromSheets")}
-        disabled={!!syncing}
+        disabled={!!syncing || sheetsImportDisabled}
       >
         {syncing === "fromSheets" ? "取込中..." : "Sheets取込"}
       </button>

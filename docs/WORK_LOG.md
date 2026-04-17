@@ -121,3 +121,22 @@
 **メモ:** 本番反映後に `prisma migrate deploy` が必要。
 
 ---
+
+### 2026-04-18（シフト追加締切）
+
+**概要:** `ShiftPeriod.shiftSlotsLocked` を追加。シフト表で「シフト追加締め切り」／「シフト追加締切を解除」トグル（希望締切とは別）。締切中はシフト表の追加・削除・時間変更・ドラッグ、スロット管理者メモ、`/api/shifts` の `addCast`/`removeCast`/`editCast`/`updateSlotMemo`、希望登録でシフト表へ即時反映する処理、フォーム取込、Sheets 取込を拒否。Sheets 書出は可。
+
+**変更ファイル（主なもの）:**
+- `prisma/schema.prisma` / `prisma/migrations/20260418140000_shift_slots_locked/migration.sql`
+- `src/lib/shift-slot-lock.ts`
+- `src/app/api/shift-periods/[periodId]/shift-slots-lock/route.ts`
+- `src/app/api/shifts/route.ts`, `src/app/api/requests/route.ts`, `src/app/api/form-import/route.ts`, `src/app/api/sync/route.ts`
+- `src/components/shift-slots-lock-toggle.tsx`, `src/app/shifts/.../page.tsx`, `src/components/sync-buttons.tsx`
+- `src/components/shift-grid/*`, `src/app/requests/.../page.tsx`, `src/components/form-import-button.tsx`
+- `docs/WORK_LOG.md`
+
+**メモ:** 本番 DB に `npx prisma migrate deploy`（マイグレーション `20260418140000_shift_slots_locked`）。
+
+**Git:** コミット `1745d05` / `main`
+
+---

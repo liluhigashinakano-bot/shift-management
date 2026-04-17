@@ -5,6 +5,7 @@ import { NavHeader } from "@/components/nav-header";
 import { ShiftGrid } from "@/components/shift-grid/shift-grid";
 import { SyncButtons } from "@/components/sync-buttons";
 import { ShiftRequestLockToggle } from "@/components/shift-request-lock-toggle";
+import { ShiftSlotsLockToggle } from "@/components/shift-slots-lock-toggle";
 import Link from "next/link";
 
 export default async function ShiftPage({
@@ -159,14 +160,25 @@ export default async function ShiftPage({
             >
               調整一覧
             </Link>
-            {isAdmin && <SyncButtons periodId={periodId} />}
+            {isAdmin && (
+              <SyncButtons
+                periodId={periodId}
+                sheetsImportDisabled={Boolean(period.shiftSlotsLocked)}
+              />
+            )}
           </div>
         </div>
         {isAdmin && (
-          <ShiftRequestLockToggle
-            periodId={periodId}
-            initialLocked={Boolean(period.shiftRequestsLocked)}
-          />
+          <div className="flex flex-wrap items-start gap-3">
+            <ShiftRequestLockToggle
+              periodId={periodId}
+              initialLocked={Boolean(period.shiftRequestsLocked)}
+            />
+            <ShiftSlotsLockToggle
+              periodId={periodId}
+              initialLocked={Boolean(period.shiftSlotsLocked)}
+            />
+          </div>
         )}
         </div>
         <ShiftGrid

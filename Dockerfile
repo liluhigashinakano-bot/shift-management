@@ -18,5 +18,5 @@ ENV HOSTNAME=0.0.0.0
 
 RUN npm run build
 
-# Railway が注入する PORT で待ち受け（未設定時は 3000）。0.0.0.0 で外部から到達可能にする
-CMD ["sh", "-c", "exec npx next start --hostname 0.0.0.0 --port ${PORT:-3000}"]
+# 本番DBに未適用のマイグレーションを反映してから起動（カラム追加漏れによる 500 を防ぐ）
+CMD ["sh", "-c", "npx prisma migrate deploy && exec npx next start --hostname 0.0.0.0 --port ${PORT:-3000}"]

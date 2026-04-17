@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
+import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -86,6 +87,8 @@ export async function POST(req: NextRequest) {
     }
     const lockedRes = await assertShiftRequestsUnlocked(periodId);
     if (lockedRes) return lockedRes;
+    const slotLockedRes = await assertShiftSlotsUnlocked(periodId);
+    if (slotLockedRes) return slotLockedRes;
     const request = await prisma.shiftRequest.create({
       data: {
         castId,
@@ -114,6 +117,8 @@ export async function POST(req: NextRequest) {
 
     const lockedBulk = await assertShiftRequestsUnlocked(periodId);
     if (lockedBulk) return lockedBulk;
+    const slotLockedBulk = await assertShiftSlotsUnlocked(periodId);
+    if (slotLockedBulk) return slotLockedBulk;
 
     // 同じ日が複数回あれば最後の内容を採用
     const byCalendarDay = new Map<string, (typeof entries)[0]>();

@@ -22,7 +22,7 @@ export function FormImportButton({
 
   const run = async () => {
     if (disabled) {
-      setMessage("シフト希望が締め切られているため取り込めません");
+      setMessage("締め切りのため取り込めません（希望締切またはシフト追加締切）");
       return;
     }
     if (!sheetsConfigured) {

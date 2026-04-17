@@ -8,8 +8,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "prisma migrate deploy && next start",
     "lint": "eslint",
+    "verify": "npm test && npm run build",
+    "test": "npm run test:login-email && npm run test:sheet-date && npm run test:google-form-config",
     "test:login-email": "npx tsx src/lib/login-email.test.ts",
     "test:sheet-date": "npx tsx src/lib/sheet-date.test.ts",
     "test:google-form-config": "npx tsx src/lib/google-form-config.test.ts",

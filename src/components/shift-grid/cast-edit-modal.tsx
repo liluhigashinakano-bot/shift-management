@@ -16,6 +16,8 @@ type Props = {
   currentEnd: number;
   memo: string | null;
   periodId: string;
+  /** シフト表の追加・変更締切 */
+  shiftSlotsLocked?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -36,6 +38,7 @@ export function CastEditModal({
   currentEnd,
   memo,
   periodId,
+  shiftSlotsLocked = false,
   onClose,
   onSaved,
 }: Props) {
@@ -76,6 +79,7 @@ export function CastEditModal({
   }, [periodId, castId, dayLabel]);
 
   const handleDelete = async () => {
+    if (shiftSlotsLocked) return;
     setSaving(true);
     await fetch("/api/shifts", {
       method: "POST",
@@ -93,6 +97,7 @@ export function CastEditModal({
   };
 
   const handleEdit = async () => {
+    if (shiftSlotsLocked) return;
     setSaving(true);
     await fetch("/api/shifts", {
       method: "POST",
@@ -118,6 +123,11 @@ export function CastEditModal({
     return (
       <Modal open title={`${castName} - ${dayLabel}`} onClose={onClose}>
         <div className="space-y-3 mb-4">
+          {shiftSlotsLocked && (
+            <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
+              シフト追加が締め切られているため、時間の変更・削除はできません。
+            </p>
+          )}
           {/* シフト希望情報 */}
           {loading ? (
             <div className="text-xs text-gray-400">読み込み中...</div>
@@ -172,6 +182,7 @@ export function CastEditModal({
             variant="outline"
             className="justify-start text-blue-600 border-blue-200 hover:bg-blue-50"
             onClick={() => setMode("edit")}
+            disabled={shiftSlotsLocked}
           >
             時間を編集
           </Button>
@@ -179,7 +190,7 @@ export function CastEditModal({
             variant="outline"
             className="justify-start text-red-600 border-red-200 hover:bg-red-50"
             onClick={handleDelete}
-            disabled={saving}
+            disabled={saving || shiftSlotsLocked}
           >
             {saving ? "削除中..." : "シフトを削除（カット）"}
           </Button>
@@ -253,7 +264,7 @@ export function CastEditModal({
           </Button>
           <Button
             onClick={handleEdit}
-            disabled={saving}
+            disabled={saving || shiftSlotsLocked}
             className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           >
             {saving ? "保存中..." : "変更を保存"}

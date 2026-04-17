@@ -176,7 +176,11 @@ export default async function RequestsPage({
             </div>
           )}
           {role !== "cast" && (
-            <FormImportButton periodId={periodId} sheetsConfigured={sheetsOk} />
+            <FormImportButton
+              periodId={periodId}
+              sheetsConfigured={sheetsOk}
+              disabled={period.shiftRequestsLocked || period.shiftSlotsLocked}
+            />
           )}
         </div>
         {role === "cast" && googleFormUrl && (

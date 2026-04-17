@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
+import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -150,6 +151,8 @@ export async function POST(req: NextRequest) {
     }
     const lockRes = await assertShiftRequestsUnlocked(dayForLock.periodId);
     if (lockRes) return lockRes;
+    const slotLockRes = await assertShiftSlotsUnlocked(dayForLock.periodId);
+    if (slotLockRes) return slotLockRes;
 
     const slots = [];
 
@@ -199,6 +202,16 @@ export async function POST(req: NextRequest) {
   if (action === "removeCast") {
     const { reason } = body;
 
+    const dayForSlotLock = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { periodId: true },
+    });
+    if (!dayForSlotLock) {
+      return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    }
+    const slotLockRm = await assertShiftSlotsUnlocked(dayForSlotLock.periodId);
+    if (slotLockRm) return slotLockRm;
+
     // 削除前に元の時間を記録
     const existing = await prisma.shiftSlot.findMany({
       where: { dayId, castId },
@@ -231,6 +244,16 @@ export async function POST(req: NextRequest) {
   // 編集（時間変更）+ 調整記録を自動作成
   if (action === "editCast") {
     const { newStart, newEnd, reason } = body;
+
+    const dayForEditLock = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { periodId: true },
+    });
+    if (!dayForEditLock) {
+      return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    }
+    const slotLockEd = await assertShiftSlotsUnlocked(dayForEditLock.periodId);
+    if (slotLockEd) return slotLockEd;
 
     // 元の時間を取得
     const existing = await prisma.shiftSlot.findMany({
@@ -288,6 +311,8 @@ export async function POST(req: NextRequest) {
     const { timeSlot, memo } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const slotMemoLock = await assertShiftSlotsUnlocked(day.periodId);
+    if (slotMemoLock) return slotMemoLock;
 
     // notesフィールドにJSON形式で管理者メモを保存: {"slotMemos":{"20":"メモ内容",...}, "text":"通常備考"}
     let parsed: any = {};

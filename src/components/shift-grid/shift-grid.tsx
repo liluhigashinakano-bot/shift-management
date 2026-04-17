@@ -52,6 +52,8 @@ type Period = {
   store: { id: string; name: string };
   shiftDays: ShiftDay[];
   shiftRequestsLocked?: boolean;
+  /** true のときシフト表の追加・変更不可 */
+  shiftSlotsLocked?: boolean;
   shiftRequests?: ShiftRequestInfo[];
   helpInfo?: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]>;
 };
@@ -138,7 +140,12 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
     if (res.ok) setData(await res.json());
   }, [data.id]);
 
+  const slotsLocked = Boolean(data.shiftSlotsLocked);
+  const addShiftBlocked =
+    Boolean(data.shiftRequestsLocked) || slotsLocked;
+
   const handleCastClick = (day: ShiftDay, castId: string, castName: string) => {
+    if (slotsLocked) return;
     const castSlots = day.shiftSlots
       .filter((s) => s.castId === castId)
       .sort((a, b) => a.timeSlot - b.timeSlot);
@@ -171,6 +178,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
     originalStart: number,
     originalEnd: number,
   ) => {
+    if (slotsLocked) {
+      e.preventDefault();
+      return;
+    }
     setDragging({ dayId, castId, castName, type, originalStart, originalEnd });
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", castName);
@@ -178,6 +189,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
 
   const handleDrop = async (e: React.DragEvent, targetDayId: string, targetSlot: number) => {
     e.preventDefault();
+    if (slotsLocked) {
+      setDragging(null);
+      return;
+    }
     if (!dragging || dragging.dayId !== targetDayId) {
       setDragging(null);
       return;
@@ -307,14 +322,14 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                       <span className="ml-1 text-[10px] font-normal">({dow})</span>
                       <button
                         type="button"
-                        disabled={Boolean(data.shiftRequestsLocked)}
+                        disabled={addShiftBlocked}
                         className={`absolute right-0 top-0 text-[7px] font-bold px-0.5 no-print ${
-                          data.shiftRequestsLocked
+                          addShiftBlocked
                             ? "text-gray-300 cursor-not-allowed"
                             : "text-pink-500 hover:text-pink-700"
                         }`}
                         onClick={() => {
-                          if (data.shiftRequestsLocked) return;
+                          if (addShiftBlocked) return;
                           const label = `${d.getMonth() + 1}/${d.getDate()}(${dow})`;
                           setAddDialog({ dayId: day.id, dayLabel: label });
                         }}
@@ -432,7 +447,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                               return (
                                 <span
                                   key={s.castId}
-                                  draggable
+                                  draggable={!slotsLocked}
                                   onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "start", origStart, origEnd)}
                                   style={{ ...tagColor, fontSize: `${nameFontSize}px` }}
                                   className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium leading-tight hover:brightness-90 whitespace-nowrap"
@@ -493,7 +508,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                               return (
                               <span
                                 key={s.castId}
-                                draggable
+                                draggable={!slotsLocked}
                                 onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "end", origStart, origEnd)}
                                 style={{ ...endColor, fontSize: `${endNameFontSize}px` }}
                                 className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing leading-tight hover:brightness-90 whitespace-nowrap"
@@ -512,7 +527,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                           </td>
                           {/* 管理者メモ（直接入力可能） */}
                           <td style={{ boxShadow: `inset 1px 0 0 #d1d5db${!isLast ? ", inset -3px 0 0 #6b7280" : ""}`, height: "28px", maxHeight: "28px", overflow: "hidden" }} className={`${hourBorder} px-0 py-0 ${hasWorking ? "bg-amber-50/40" : ""}`}>
-                            <SlotMemoInput dayId={day.id} timeSlot={slot} notes={day.notes} />
+                            <SlotMemoInput dayId={day.id} timeSlot={slot} notes={day.notes} disabled={slotsLocked} />
                           </td>
                         </React.Fragment>
                       );
@@ -668,6 +683,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
             data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => s.castId) ?? []
           }
           shiftRequestsLocked={Boolean(data.shiftRequestsLocked)}
+          shiftSlotsLocked={slotsLocked}
           onClose={() => setAddDialog(null)}
           onSaved={reload}
         />
@@ -683,6 +699,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
           currentEnd={editTarget.currentEnd}
           memo={editTarget.memo}
           periodId={data.id}
+          shiftSlotsLocked={slotsLocked}
           onClose={() => setEditTarget(null)}
           onSaved={reload}
         />
@@ -691,6 +708,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
         <MemoViewModal
           memoView={memoView}
           shiftRequests={data.shiftRequests}
+          shiftSlotsLocked={slotsLocked}
           onClose={() => setMemoView(null)}
           onEdit={() => {
             setMemoView(null);
@@ -795,9 +813,11 @@ function FieldEditModal({
 function MemoViewModal({
   memoView,
   shiftRequests,
+  shiftSlotsLocked,
   onClose,
   onEdit,
 }: {
+  shiftSlotsLocked?: boolean;
   memoView: {
     castName: string;
     memo: string;
@@ -867,7 +887,14 @@ function MemoViewModal({
       </div>
 
       <div className="flex justify-between pt-3 border-t">
-        <button className="text-xs text-blue-600 hover:text-blue-800" onClick={onEdit}>
+        <button
+          type="button"
+          className={`text-xs ${shiftSlotsLocked ? "text-gray-400 cursor-not-allowed" : "text-blue-600 hover:text-blue-800"}`}
+          onClick={() => {
+            if (shiftSlotsLocked) return;
+            onEdit();
+          }}
+        >
           シフトを編集/削除
         </button>
         <Button variant="outline" onClick={onClose}>閉じる</Button>
@@ -877,7 +904,17 @@ function MemoViewModal({
 }
 
 // 管理者メモ（スロット単位インライン入力）
-function SlotMemoInput({ dayId, timeSlot, notes }: { dayId: string; timeSlot: number; notes: string | null }) {
+function SlotMemoInput({
+  dayId,
+  timeSlot,
+  notes,
+  disabled = false,
+}: {
+  dayId: string;
+  timeSlot: number;
+  notes: string | null;
+  disabled?: boolean;
+}) {
   // notesからslotMemosを取得
   let slotMemos: Record<string, string> = {};
   try {
@@ -890,6 +927,7 @@ function SlotMemoInput({ dayId, timeSlot, notes }: { dayId: string; timeSlot: nu
   const [dirty, setDirty] = useState(false);
 
   const save = async () => {
+    if (disabled) return;
     if (value === currentMemo) { setDirty(false); return; }
     await fetch("/api/shifts", {
       method: "POST",
@@ -906,18 +944,20 @@ function SlotMemoInput({ dayId, timeSlot, notes }: { dayId: string; timeSlot: nu
 
   return (
     <textarea
+      readOnly={disabled}
       style={{
-        backgroundColor: bgColor,
+        backgroundColor: disabled ? "#f3f4f6" : bgColor,
         fontSize: `${fontSize}px`,
         lineHeight: "1.2",
         height: "28px",
         resize: "none",
         wordBreak: "break-all",
       }}
-      className={`w-full border-0 px-0.5 py-0 outline-none overflow-hidden ${value ? "text-gray-700" : "text-gray-300"}`}
+      className={`w-full border-0 px-0.5 py-0 outline-none overflow-hidden ${value ? "text-gray-700" : "text-gray-300"} ${disabled ? "cursor-not-allowed" : ""}`}
       value={value}
       placeholder=""
       onChange={(e) => {
+        if (disabled) return;
         setValue(e.target.value);
         setDirty(true);
       }}
