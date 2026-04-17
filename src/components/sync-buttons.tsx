@@ -33,9 +33,10 @@ export function SyncButtons({
   };
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5 sm:gap-1 flex-nowrap shrink-0">
       <button
-        className="text-xs text-green-600 hover:text-green-800 px-2 py-1 border border-green-200 rounded disabled:opacity-50"
+        type="button"
+        className="text-[10px] sm:text-xs text-green-600 hover:text-green-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-green-200 rounded disabled:opacity-50 whitespace-nowrap shrink-0"
         onClick={() => sync("toSheets")}
         disabled={!!syncing}
       >
@@ -44,14 +45,16 @@ export function SyncButtons({
       <button
         type="button"
         title={sheetsImportDisabled ? "シフト追加締切中は取込できません" : undefined}
-        className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 border border-purple-200 rounded disabled:opacity-50"
+        className="text-[10px] sm:text-xs text-purple-600 hover:text-purple-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-purple-200 rounded disabled:opacity-50 whitespace-nowrap shrink-0"
         onClick={() => sync("fromSheets")}
         disabled={!!syncing || sheetsImportDisabled}
       >
         {syncing === "fromSheets" ? "取込中..." : "Sheets取込"}
       </button>
       {message && (
-        <span className="text-xs text-gray-500 ml-1">{message}</span>
+        <span className="text-[10px] sm:text-xs text-gray-500 ml-0.5 whitespace-nowrap shrink-0 hidden sm:inline max-w-[10rem] truncate">
+          {message}
+        </span>
       )}
     </div>
   );

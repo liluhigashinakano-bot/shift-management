@@ -129,33 +129,42 @@ export default async function ShiftPage({
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="flex flex-col gap-3 mb-4">
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="mb-4 min-w-0">
+        <div className="flex items-center gap-1 sm:gap-2 flex-nowrap overflow-x-auto max-w-full pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
           <Link
             href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-[10px] sm:text-xs text-gray-500 hover:text-gray-700 shrink-0 whitespace-nowrap"
           >
             &larr; ダッシュボード
           </Link>
-          <h1 className="text-xl font-bold">
+          <h1 className="text-xs sm:text-base md:text-xl font-bold shrink-0 whitespace-nowrap">
             {period.store.name} - {period.year}年{period.month}月{halfLabel}
           </h1>
-          <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <div className="shrink-0">
+              <ShiftPeriodLocksPanel
+                periodId={periodId}
+                initialRequestsLocked={Boolean(period.shiftRequestsLocked)}
+                initialSlotsLocked={Boolean(period.shiftSlotsLocked)}
+              />
+            </div>
+          )}
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
             <Link
               href={`/confirmed/${storeId}/${periodId}`}
-              className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 border border-purple-200 rounded"
+              className="text-[10px] sm:text-xs text-purple-600 hover:text-purple-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-purple-200 rounded whitespace-nowrap"
             >
               確定シフト
             </Link>
             <Link
               href={`/requests/${storeId}/${periodId}`}
-              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 border border-blue-200 rounded"
+              className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-blue-200 rounded whitespace-nowrap"
             >
               希望一覧
             </Link>
             <Link
               href={`/adjustments/${storeId}/${periodId}`}
-              className="text-xs text-orange-600 hover:text-orange-800 px-2 py-1 border border-orange-200 rounded"
+              className="text-[10px] sm:text-xs text-orange-600 hover:text-orange-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-orange-200 rounded whitespace-nowrap"
             >
               調整一覧
             </Link>
@@ -167,13 +176,6 @@ export default async function ShiftPage({
             )}
           </div>
         </div>
-        {isAdmin && (
-          <ShiftPeriodLocksPanel
-            periodId={periodId}
-            initialRequestsLocked={Boolean(period.shiftRequestsLocked)}
-            initialSlotsLocked={Boolean(period.shiftSlotsLocked)}
-          />
-        )}
         </div>
         <ShiftGrid
           initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo }))}

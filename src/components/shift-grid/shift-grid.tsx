@@ -265,7 +265,8 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               >
                 {day ? (
                   <button
-                    className="text-[7px] text-blue-500 hover:text-blue-700"
+                    type="button"
+                    className="text-[7px] text-blue-500 hover:text-blue-700 whitespace-nowrap"
                     onClick={() => setEditDay(day)}
                   >
                     営業情報
@@ -323,7 +324,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                       <button
                         type="button"
                         disabled={addShiftBlocked}
-                        className={`absolute right-0 top-0 text-[7px] font-bold px-0.5 no-print ${
+                        className={`absolute right-0 top-0 text-[7px] font-bold px-0.5 no-print whitespace-nowrap ${
                           addShiftBlocked
                             ? "text-gray-300 cursor-not-allowed"
                             : "text-pink-500 hover:text-pink-700"
