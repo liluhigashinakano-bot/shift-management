@@ -18,4 +18,5 @@ ENV HOSTNAME=0.0.0.0
 
 RUN npm run build
 
-CMD ["npm", "run", "start"]
+# Railway が注入する PORT で待ち受け（未設定時は 3000）。0.0.0.0 で外部から到達可能にする
+CMD ["sh", "-c", "exec npx next start --hostname 0.0.0.0 --port ${PORT:-3000}"]
