@@ -151,27 +151,41 @@ export default async function ConfirmedPage({
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="flex items-center gap-4 mb-4 flex-wrap">
-          {role !== "cast" && (
-            <Link
-              href={`/shifts/${storeId}/${periodId}`}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              &larr; シフト表に戻る
-            </Link>
-          )}
-          <h1 className="text-xl font-bold">
-            {period.store.name} - {period.year}年{period.month}月{halfLabel} 確定シフト
-          </h1>
+        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
+            {role !== "cast" && (
+              <Link
+                href={`/shifts/${storeId}/${periodId}`}
+                className="mb-1 inline-block text-xs text-gray-500 hover:text-gray-700 sm:text-sm"
+              >
+                &larr; シフト表に戻る
+              </Link>
+            )}
+            <h1 className="text-sm font-bold leading-snug sm:text-lg md:text-xl">
+              <span className="block">
+                {period.store.name}
+                {period.year}年{period.month}月{halfLabel}
+              </span>
+              <span className="mt-0.5 block text-xs font-bold sm:text-sm md:text-base">確定シフト</span>
+            </h1>
+          </div>
           {role === "cast" && (
-            <div className="ml-auto flex items-center gap-3 text-sm">
+            <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
               <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
-              <Link className="text-purple-600 hover:text-purple-800" href={`/requests/${storeId}/${periodId}`}>
-                希望一覧
-              </Link>
-              <Link className="text-purple-600 hover:text-purple-800" href={`/adjustments/${storeId}/${periodId}`}>
-                調整一覧
-              </Link>
+              <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
+                <Link
+                  href={`/requests/${storeId}/${periodId}`}
+                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+                >
+                  希望一覧
+                </Link>
+                <Link
+                  href={`/adjustments/${storeId}/${periodId}`}
+                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+                >
+                  調整一覧
+                </Link>
+              </div>
             </div>
           )}
         </div>

@@ -266,10 +266,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                 {day ? (
                   <button
                     type="button"
-                    className="text-[7px] text-blue-500 hover:text-blue-700 whitespace-nowrap"
+                    className="inline-flex items-center justify-center rounded border border-blue-200 bg-white px-0.5 py-0.5 text-[7px] font-medium text-blue-600 shadow-sm hover:border-blue-300 hover:bg-blue-50 whitespace-nowrap"
                     onClick={() => setEditDay(day)}
                   >
-                    営業情報
+                    ＋営業情報
                   </button>
                 ) : (
                   <div className="h-4" />
@@ -324,10 +324,10 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                       <button
                         type="button"
                         disabled={addShiftBlocked}
-                        className={`absolute right-0 top-0 text-[7px] font-bold px-0.5 no-print whitespace-nowrap ${
+                        className={`absolute right-0 top-0 inline-flex items-center justify-center rounded border px-0.5 py-0.5 text-[7px] font-bold no-print shadow-sm whitespace-nowrap ${
                           addShiftBlocked
-                            ? "text-gray-300 cursor-not-allowed"
-                            : "text-pink-500 hover:text-pink-700"
+                            ? "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                            : "border-pink-200 bg-white text-pink-600 hover:border-pink-300 hover:bg-pink-50"
                         }`}
                         onClick={() => {
                           if (addShiftBlocked) return;
@@ -335,7 +335,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                           setAddDialog({ dayId: day.id, dayLabel: label });
                         }}
                       >
-                        追加シフト
+                        ＋追加シフト
                       </button>
                     </th>
                   );
