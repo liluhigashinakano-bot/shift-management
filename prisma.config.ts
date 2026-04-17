@@ -9,6 +9,9 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Railway のビルド時点では Postgres 未接続でも `prisma generate` が通るようにする（実行時は実URLが必須）
+    url:
+      process.env["DATABASE_URL"] ??
+      "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
   },
 });

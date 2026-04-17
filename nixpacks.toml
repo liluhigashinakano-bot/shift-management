@@ -1,0 +1,3 @@
+[variables]
+# Prisma 7 は Node 20.19+ / 22.12+ / 24+ が必須
+NIXPACKS_NODE_VERSION = "22.12.0"
