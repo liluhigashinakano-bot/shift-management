@@ -55,6 +55,6 @@
 - `.cursor/rules/no-paid-actions.mdc`
 - `docs/WORK_LOG.md`
 
-**Git:** （本コミットで追記）
+**Git:** コミット `a37f0f8` / `main` / push 済み
 
 ---
