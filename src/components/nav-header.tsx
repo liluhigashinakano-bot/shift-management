@@ -67,12 +67,12 @@ export function NavHeader({ user }: Props) {
           <button
             type="button"
             className="text-gray-400 hover:text-gray-600 text-xs"
-            onClick={() =>
-              signOut({
-                // 0.0.0.0:PORT など内部URLに引っ張られないよう、実際に開いているURL基準で絶対URLにする
-                callbackUrl: `${window.location.origin}/login`,
-              })
-            }
+            onClick={async () => {
+              // サーバー側の signOut リダイレクトが 0.0.0.0:PORT を返す環境があるため、
+              // セッション破棄だけ任せて、遷移先はブラウザで確定させる
+              await signOut({ redirect: false });
+              window.location.assign(`${window.location.origin}/login`);
+            }}
           >
             ログアウト
           </button>
