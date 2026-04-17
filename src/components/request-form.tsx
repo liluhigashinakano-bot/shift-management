@@ -138,7 +138,7 @@ export function RequestForm({
 
   const statusLabel: Record<string, { label: string; color: string }> = {
     pending: { label: "未反映", color: "bg-yellow-100 text-yellow-700" },
-    approved: { label: "シフト表反映済", color: "bg-green-100 text-green-700" },
+    approved: { label: "反映済み", color: "bg-green-100 text-green-700" },
     rejected: { label: "却下", color: "bg-red-100 text-red-700" },
     adjusted: { label: "調整済", color: "bg-blue-100 text-blue-700" },
   };
@@ -163,28 +163,33 @@ export function RequestForm({
         </span>
       </div>
 
-      {/* 希望一覧テーブル */}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+      {/* 希望一覧テーブル（スマホは余白・文字を詰め、備考は横スクロール） */}
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="w-full border-collapse text-[11px] leading-tight sm:text-sm sm:leading-normal">
           <thead>
             <tr className="bg-gray-100">
-              <th className="border border-gray-300 px-3 py-2 text-left">キャスト</th>
-              <th className="border border-gray-300 px-3 py-2 text-left">所属</th>
-              <th className="border border-gray-300 px-3 py-2 text-left">日付</th>
-              <th className="border border-gray-300 px-3 py-2 text-center">出勤</th>
-              <th className="border border-gray-300 px-3 py-2 text-center">退勤</th>
-              <th className="border border-gray-300 px-3 py-2 text-center">時間</th>
-              <th className="border border-gray-300 px-3 py-2 text-center">ステータス</th>
-              <th className="border border-gray-300 px-3 py-2 text-left">備考</th>
+              <th className="border border-gray-300 px-1.5 py-1 text-left sm:px-3 sm:py-2">キャスト</th>
+              <th className="border border-gray-300 px-1.5 py-1 text-left sm:px-3 sm:py-2">所属</th>
+              <th className="border border-gray-300 px-1.5 py-1 text-left sm:px-3 sm:py-2">日付</th>
+              <th className="border border-gray-300 px-1 py-1 text-center sm:px-3 sm:py-2">出勤</th>
+              <th className="border border-gray-300 px-1 py-1 text-center sm:px-3 sm:py-2">退勤</th>
+              <th className="border border-gray-300 px-1 py-1 text-center sm:px-3 sm:py-2">時間</th>
+              <th className="border border-gray-300 px-1 py-1 text-center sm:px-3 sm:py-2">ステータス</th>
+              <th className="border border-gray-300 px-1.5 py-1 text-left sm:px-3 sm:py-2 min-w-[5.5rem]">
+                備考
+              </th>
               {isAdmin && (
-                <th className="border border-gray-300 px-3 py-2 text-center">操作</th>
+                <th className="border border-gray-300 px-1.5 py-1 text-center sm:px-3 sm:py-2">操作</th>
               )}
             </tr>
           </thead>
           <tbody>
             {requests.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 9 : 8} className="border border-gray-300 px-3 py-8 text-center text-gray-400">
+                <td
+                  colSpan={isAdmin ? 9 : 8}
+                  className="border border-gray-300 px-2 py-4 text-center text-gray-400 sm:py-8"
+                >
                   シフト希望がまだ登録されていません
                 </td>
               </tr>
@@ -194,38 +199,36 @@ export function RequestForm({
                 const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
                 const hours = r.endTime - r.startTime;
                 const st = statusLabel[r.status] || statusLabel.pending;
+                const cell =
+                  "border border-gray-300 px-1.5 py-0.5 align-middle sm:px-3 sm:py-1.5";
                 return (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="border border-gray-300 px-3 py-1.5 font-medium">
-                      {r.cast.name}
-                    </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-gray-500 text-xs">
+                    <td className={`${cell} font-medium`}>{r.cast.name}</td>
+                    <td className={`${cell} text-gray-500 text-[10px] sm:text-xs`}>
                       {r.cast.store?.name || "-"}
                     </td>
-                    <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      {formatTimeSlot(r.startTime)}
-                    </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      {formatTimeSlot(r.endTime)}
-                    </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      {hours}h
-                    </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${st.color}`}>
+                    <td className={cell}>{dateStr}</td>
+                    <td className={`${cell} text-center`}>{formatTimeSlot(r.startTime)}</td>
+                    <td className={`${cell} text-center`}>{formatTimeSlot(r.endTime)}</td>
+                    <td className={`${cell} text-center`}>{hours}h</td>
+                    <td className={`${cell} text-center`}>
+                      <span
+                        className={`inline-block whitespace-nowrap px-1 py-0.5 rounded-full text-[10px] sm:px-2 sm:text-xs ${st.color}`}
+                      >
                         {st.label}
                       </span>
                     </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">
-                      {r.notes || ""}
+                    <td className={`${cell} text-gray-500`}>
+                      <div className="max-w-[7rem] overflow-x-auto overflow-y-hidden whitespace-nowrap py-0.5 [scrollbar-width:thin] sm:max-w-[20rem] sm:whitespace-normal sm:overflow-visible">
+                        {r.notes || ""}
+                      </div>
                     </td>
                     {isAdmin && (
-                      <td className="border border-gray-300 px-2 py-1.5 text-center">
+                      <td className={`${cell} text-center px-1 sm:px-2`}>
                         <button
                           type="button"
                           disabled={lockedFor(r.periodId)}
-                          className={`text-xs ${
+                          className={`text-[10px] sm:text-xs ${
                             lockedFor(r.periodId)
                               ? "text-gray-300 cursor-not-allowed"
                               : "text-red-400 hover:text-red-600"
