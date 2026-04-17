@@ -46,3 +46,15 @@
 **Git:** `main` にコミット済み（履歴は `git log --oneline -5` で確認）
 
 ---
+
+### 2026-04-18
+
+**概要:** 費用がかかる可能性がある作業は進めず中止し、ユーザー確認とするよう Cursor ルール（`.cursor/rules/no-paid-actions.mdc`）を追加。
+
+**変更ファイル（主なもの）:**
+- `.cursor/rules/no-paid-actions.mdc`
+- `docs/WORK_LOG.md`
+
+**Git:** （本コミットで追記）
+
+---
