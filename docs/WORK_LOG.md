@@ -83,6 +83,6 @@
 - `src/app/dashboard/page.tsx`（タイトル・フィルタの折り返し）
 - 各 `page.tsx`（`min-h-dvh`、`main` のパディング）
 
-**Git:** （本コミットで追記）
+**Git:** コミット `ebee607` / `main` / push 済み
 
 ---
