@@ -85,7 +85,7 @@ export function ShiftPeriodLocksPanel({
       {loading
         ? "…"
         : bothUnlocked
-          ? "希望・シフト表を締め切る"
+          ? "希望を締め切る"
           : "締切を解除"}
     </Button>
   );
