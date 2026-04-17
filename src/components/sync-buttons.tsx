@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 
+/** シート書出／取込ボタンを表示するか（一時的にオフにする場合は false） */
+const SHOW_SHEETS_SYNC_BUTTONS = false;
+
 export function SyncButtons({
   periodId,
   sheetsImportDisabled = false,
@@ -31,6 +34,10 @@ export function SyncButtons({
       window.location.reload();
     }
   };
+
+  if (!SHOW_SHEETS_SYNC_BUTTONS) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-0.5 sm:gap-1 flex-nowrap shrink-0">

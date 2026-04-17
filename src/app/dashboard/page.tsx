@@ -60,15 +60,8 @@ export default async function DashboardPage({
   const currentPeriod = periodFromNow(now);
   const maxFuturePeriod = nextPeriod(currentPeriod); // ここまでが選択/表示可能
 
-  const allowedYears = [2024, 2025, 2026];
-  let selectedYear = (() => {
-    const raw = sp?.year;
-    const s = Array.isArray(raw) ? raw[0] : raw;
-    const n = s ? Number(s) : NaN;
-    return allowedYears.includes(n) ? n : currentPeriod.year;
-  })();
-
-  // 未来の上限（maxFuturePeriod）より先の年は丸ごと選ばせない
+  // 年は UI では選ばせず、常に「今の年」を基準（未来上限を超えないようクリップ）
+  let selectedYear = currentPeriod.year;
   if (selectedYear > maxFuturePeriod.year) selectedYear = maxFuturePeriod.year;
 
   // 初期表示は「現在の期間」を起点にする（未来は次の期間まで表示できる）
@@ -160,16 +153,6 @@ export default async function DashboardPage({
           </h1>
 
           <form method="get" className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            <label className="text-sm font-bold text-gray-600">
-              年
-              <select name="year" defaultValue={String(selectedYear)} className="ml-2 border border-gray-300 rounded-md px-2 py-1 text-sm">
-                {allowedYears.map((y) => (
-                  <option key={y} value={String(y)}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="text-sm font-bold text-gray-600">
               期間
               <select name="start" defaultValue={`${effectiveStart.month}-${effectiveStart.half}`} className="ml-2 border border-gray-300 rounded-md px-2 py-1 text-sm">
