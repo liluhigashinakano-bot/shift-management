@@ -13,6 +13,8 @@ type Props = {
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   currentStoreName: string;
   existingSlots: string[];
+  /** true のとき希望締切のため追加不可 */
+  shiftRequestsLocked?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -23,6 +25,7 @@ export function CastAddDialog({
   allCasts,
   currentStoreName,
   existingSlots,
+  shiftRequestsLocked = false,
   onClose,
   onSaved,
 }: Props) {
@@ -56,7 +59,7 @@ export function CastAddDialog({
   }, [tab, helpStore, allCasts, currentStoreName]);
 
   const handleSave = async () => {
-    if (!castId) return;
+    if (!castId || shiftRequestsLocked) return;
     setSaving(true);
 
     await fetch("/api/shifts", {
@@ -80,6 +83,11 @@ export function CastAddDialog({
   return (
     <Modal open title={`${dayLabel} - キャスト追加`} onClose={onClose}>
       <div className="space-y-4">
+        {shiftRequestsLocked && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            シフト希望が締め切られているため、ここからの追加はできません。「締め切り解除」後に再度お試しください。
+          </p>
+        )}
         {/* タブ切り替え */}
         <div className="flex border-b border-gray-300">
           <button
@@ -191,7 +199,7 @@ export function CastAddDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!castId || saving}
+            disabled={!castId || saving || shiftRequestsLocked}
             className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           >
             {saving ? "保存中..." : "追加"}

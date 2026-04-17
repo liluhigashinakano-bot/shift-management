@@ -44,6 +44,8 @@ model ShiftPeriod {
   half             String   // "first" | "second"
   targetBudgetTotal Int?
   sheetName        String?  // Google Sheets上のシート名
+  /// true のときシフト希望の新規・編集・削除（および取り込み・シフト表からの追加）を禁止
+  shiftRequestsLocked Boolean @default(false)
   createdAt        DateTime @default(now())
 
   shiftDays     ShiftDay[]

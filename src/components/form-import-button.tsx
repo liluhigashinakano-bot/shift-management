@@ -5,6 +5,8 @@ import { useState } from "react";
 type Props = {
   periodId: string;
   sheetsConfigured: boolean;
+  /** 希望締切中は取り込み不可 */
+  disabled?: boolean;
   /** 回答シート名（省略時は API デフォルト） */
   defaultSheetName?: string;
 };
@@ -12,12 +14,17 @@ type Props = {
 export function FormImportButton({
   periodId,
   sheetsConfigured,
+  disabled = false,
   defaultSheetName = "",
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   const run = async () => {
+    if (disabled) {
+      setMessage("シフト希望が締め切られているため取り込めません");
+      return;
+    }
     if (!sheetsConfigured) {
       setMessage("Google Sheets 連携が未設定です（.env の GOOGLE_*）");
       return;
@@ -57,7 +64,7 @@ export function FormImportButton({
         type="button"
         className="text-xs rounded-md border border-sky-300 bg-white px-2 py-1 text-sky-800 hover:bg-sky-50 disabled:opacity-50"
         onClick={() => void run()}
-        disabled={loading}
+        disabled={loading || disabled}
       >
         {loading ? "取り込み中…" : "フォーム回答を取り込み"}
       </button>

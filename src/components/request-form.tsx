@@ -12,6 +12,7 @@ type Day = { id: string; date: string; dayOfWeek: string };
 type Cast = { id: string; name: string; storeName: string | null };
 type Request = {
   id: string;
+  periodId: string;
   castId: string;
   date: string;
   startTime: number;
@@ -23,6 +24,8 @@ type Request = {
 
 type Props = {
   periodId: string;
+  /** periodId → 締切済みか */
+  periodLocks: Record<string, boolean>;
   days: Day[];
   initialRequests: Request[];
   allCasts: Cast[];
@@ -32,6 +35,7 @@ type Props = {
 
 export function RequestForm({
   periodId,
+  periodLocks,
   days,
   initialRequests,
   allCasts,
@@ -54,12 +58,16 @@ export function RequestForm({
 
   const isAdmin = userRole === "admin" || userRole === "employee";
 
+  const lockedFor = (pid: string) => periodLocks[pid] ?? false;
+  const currentLocked = lockedFor(periodId);
+
   const reload = async () => {
     const res = await fetch(`/api/requests?periodId=${periodId}`);
     if (res.ok) setRequests(await res.json());
   };
 
   const handleSubmit = async () => {
+    if (currentLocked) return;
     const castId = isAdmin ? selectedCast : userId;
     if (!castId) return;
 
@@ -98,6 +106,8 @@ export function RequestForm({
   };
 
   const updateStatus = async (id: string, status: string) => {
+    const row = requests.find((x) => x.id === id);
+    if (row && lockedFor(row.periodId)) return;
     await fetch("/api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,6 +117,8 @@ export function RequestForm({
   };
 
   const deleteRequest = async (id: string) => {
+    const row = requests.find((x) => x.id === id);
+    if (row && lockedFor(row.periodId)) return;
     if (!confirm("この希望を削除しますか？")) return;
     await fetch("/api/requests", {
       method: "POST",
@@ -133,10 +145,16 @@ export function RequestForm({
 
   return (
     <div className="space-y-4">
+      {currentLocked && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          この店舗・期間のシフト希望は締め切りです。登録・削除はできません（解除はシフト表画面の「締め切り解除」から）。
+        </p>
+      )}
       <div className="flex items-center gap-3">
         <Button
           className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           onClick={() => setAddModal(true)}
+          disabled={currentLocked}
         >
           + シフト希望を登録
         </Button>
@@ -205,7 +223,13 @@ export function RequestForm({
                     {isAdmin && (
                       <td className="border border-gray-300 px-2 py-1.5 text-center">
                         <button
-                          className="text-xs text-red-400 hover:text-red-600"
+                          type="button"
+                          disabled={lockedFor(r.periodId)}
+                          className={`text-xs ${
+                            lockedFor(r.periodId)
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-red-400 hover:text-red-600"
+                          }`}
                           onClick={() => deleteRequest(r.id)}
                         >
                           削除
@@ -333,7 +357,7 @@ export function RequestForm({
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={saving || (isAdmin && !selectedCast)}
+              disabled={saving || (isAdmin && !selectedCast) || currentLocked}
               className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
             >
               {saving ? "登録中..." : "希望を登録"}

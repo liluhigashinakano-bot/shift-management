@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -139,6 +140,17 @@ export async function POST(req: NextRequest) {
     const { startTime, endTime, memo } = body;
     const start = startTime as number;
     const end = endTime as number;
+
+    const dayForLock = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { periodId: true },
+    });
+    if (!dayForLock) {
+      return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    }
+    const lockRes = await assertShiftRequestsUnlocked(dayForLock.periodId);
+    if (lockRes) return lockRes;
+
     const slots = [];
 
     for (let t = start; t < end; t += 0.5) {

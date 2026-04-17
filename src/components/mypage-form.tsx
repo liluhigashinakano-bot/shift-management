@@ -11,6 +11,7 @@ type Period = {
   year: number;
   month: number;
   half: string;
+  shiftRequestsLocked?: boolean;
   store: { id: string; name: string };
   shiftDays: { id: string; date: string; dayOfWeek: string }[];
 };
@@ -51,9 +52,13 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
     if (res.ok) setRequests(await res.json());
   };
 
+  const lockedForPeriod = (periodId: string) =>
+    periods.find((p) => p.id === periodId)?.shiftRequestsLocked ?? false;
+
   // 追加
   const handleAdd = async () => {
     if (!selectedPeriod || !selectedDate) return;
+    if (lockedForPeriod(selectedPeriod)) return;
     setSaving(true);
     await fetch("/api/requests", {
       method: "POST",
@@ -77,6 +82,7 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
   // 編集
   const handleEdit = async () => {
     if (!editModal) return;
+    if (lockedForPeriod(editModal.periodId)) return;
     setSaving(true);
     // 既存を削除して再作成
     await fetch("/api/requests", {
@@ -105,6 +111,8 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
 
   // 削除
   const handleDelete = async (id: string) => {
+    const row = requests.find((r) => r.id === id);
+    if (row && lockedForPeriod(row.periodId)) return;
     if (!confirm("このシフト希望を削除しますか？")) return;
     await fetch("/api/requests", {
       method: "POST",
@@ -133,6 +141,7 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
           <Button
             className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
             onClick={() => setAddModal(true)}
+            disabled={lockedForPeriod(selectedPeriod)}
           >
             + シフト希望を追加
           </Button>
@@ -173,10 +182,28 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
                       <td className="border border-gray-300 px-3 py-1.5 text-center">{hours}h</td>
                       <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{r.notes || ""}</td>
                       <td className="border border-gray-300 px-2 py-1.5 text-center">
-                        <button className="text-xs text-blue-600 hover:text-blue-800 mr-2" onClick={() => openEdit(r)}>
+                        <button
+                          type="button"
+                          disabled={lockedForPeriod(r.periodId)}
+                          className={`text-xs mr-2 ${
+                            lockedForPeriod(r.periodId)
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-blue-600 hover:text-blue-800"
+                          }`}
+                          onClick={() => openEdit(r)}
+                        >
                           編集
                         </button>
-                        <button className="text-xs text-red-400 hover:text-red-600" onClick={() => handleDelete(r.id)}>
+                        <button
+                          type="button"
+                          disabled={lockedForPeriod(r.periodId)}
+                          className={`text-xs ${
+                            lockedForPeriod(r.periodId)
+                              ? "text-gray-300 cursor-not-allowed"
+                              : "text-red-400 hover:text-red-600"
+                          }`}
+                          onClick={() => handleDelete(r.id)}
+                        >
                           削除
                         </button>
                       </td>
@@ -253,7 +280,7 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
           </div>
           <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
             <Button variant="outline" onClick={() => setAddModal(false)}>キャンセル</Button>
-            <Button onClick={handleAdd} disabled={saving || !selectedPeriod || !selectedDate} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+            <Button onClick={handleAdd} disabled={saving || !selectedPeriod || !selectedDate || lockedForPeriod(selectedPeriod)} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
               {saving ? "保存中..." : "提出"}
             </Button>
           </div>
@@ -293,7 +320,7 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
           </div>
           <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
             <Button variant="outline" onClick={() => setEditModal(null)}>キャンセル</Button>
-            <Button onClick={handleEdit} disabled={saving} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+            <Button onClick={handleEdit} disabled={saving || lockedForPeriod(editModal.periodId)} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
               {saving ? "保存中..." : "変更を保存"}
             </Button>
           </div>

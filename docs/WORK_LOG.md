@@ -101,3 +101,23 @@
 **Git:** コミット `e7a73c1` / `main` / push 済み
 
 ---
+
+### 2026-04-18（シフト希望締切）
+
+**概要:** `ShiftPeriod.shiftRequestsLocked` を追加。シフト表画面で「シフト希望締め切り」／「締め切り解除」トグル。締切中は `/api/requests` の作成・一括・削除・ステータス更新、`/api/shifts` の `addCast`（希望レコード作成）、フォーム取り込みを拒否。希望一覧・マイページの UI も無効化。
+
+**変更ファイル（主なもの）:**
+- `prisma/schema.prisma` / `prisma/migrations/20260418120000_shift_requests_locked/migration.sql`
+- `src/lib/shift-request-lock.ts`
+- `src/app/api/shift-periods/[periodId]/shift-requests-lock/route.ts`
+- `src/app/api/requests/route.ts`, `src/app/api/shifts/route.ts`, `src/app/api/form-import/route.ts`
+- `src/app/shifts/.../page.tsx`, `src/components/shift-request-lock-toggle.tsx`
+- `src/components/request-form.tsx`, `src/components/mypage-form.tsx`, `src/components/form-import-button.tsx`
+- `src/components/shift-grid/cast-add-dialog.tsx`, `shift-grid.tsx`
+- `src/app/requests/.../page.tsx`, `docs/WORK_LOG.md`
+
+**Git:** （本コミットで追記）
+
+**メモ:** 本番反映後に `prisma migrate deploy` が必要。
+
+---

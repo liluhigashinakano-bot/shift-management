@@ -116,6 +116,13 @@ export default async function RequestsPage({
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   })();
 
+  const periodIdSet = new Set<string>([periodId, ...allRequests.map((r) => r.periodId)]);
+  const lockRows = await prisma.shiftPeriod.findMany({
+    where: { id: { in: [...periodIdSet] } },
+    select: { id: true, shiftRequestsLocked: true },
+  });
+  const periodLocks = Object.fromEntries(lockRows.map((x) => [x.id, x.shiftRequestsLocked]));
+
   const allCasts = await prisma.user.findMany({
     where: role === "cast" ? { id: userId } : { role: "cast" },
     include: { store: { select: { id: true, name: true } } },
@@ -179,6 +186,7 @@ export default async function RequestsPage({
         )}
         <RequestForm
           periodId={periodId}
+          periodLocks={periodLocks}
           days={period.shiftDays.map((d) => ({
             id: d.id,
             date: d.date.toISOString(),

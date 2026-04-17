@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -83,6 +84,8 @@ export async function POST(req: NextRequest) {
     if (role === "cast" && castId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const lockedRes = await assertShiftRequestsUnlocked(periodId);
+    if (lockedRes) return lockedRes;
     const request = await prisma.shiftRequest.create({
       data: {
         castId,
@@ -108,6 +111,9 @@ export async function POST(req: NextRequest) {
     if (role === "cast" && castId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const lockedBulk = await assertShiftRequestsUnlocked(periodId);
+    if (lockedBulk) return lockedBulk;
 
     // 同じ日が複数回あれば最後の内容を採用
     const byCalendarDay = new Map<string, (typeof entries)[0]>();
@@ -148,6 +154,13 @@ export async function POST(req: NextRequest) {
     // ステータス更新は管理者/社員のみ
     if (role === "cast") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const { id, status } = body;
+    const row = await prisma.shiftRequest.findUnique({
+      where: { id },
+      select: { periodId: true },
+    });
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const lockedSt = await assertShiftRequestsUnlocked(row.periodId);
+    if (lockedSt) return lockedSt;
     await prisma.shiftRequest.update({
       where: { id },
       data: { status },
@@ -157,12 +170,16 @@ export async function POST(req: NextRequest) {
 
   if (action === "delete") {
     const { id } = body;
-    if (role === "cast") {
-      const reqRow = await prisma.shiftRequest.findUnique({ where: { id }, select: { castId: true } });
-      if (!reqRow || reqRow.castId !== session.user.id) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
+    const existing = await prisma.shiftRequest.findUnique({
+      where: { id },
+      select: { castId: true, periodId: true },
+    });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (role === "cast" && existing.castId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const lockedDel = await assertShiftRequestsUnlocked(existing.periodId);
+    if (lockedDel) return lockedDel;
     await prisma.shiftRequest.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   }

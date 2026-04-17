@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
 import { ShiftGrid } from "@/components/shift-grid/shift-grid";
 import { SyncButtons } from "@/components/sync-buttons";
+import { ShiftRequestLockToggle } from "@/components/shift-request-lock-toggle";
 import Link from "next/link";
 
 export default async function ShiftPage({
@@ -128,7 +129,8 @@ export default async function ShiftPage({
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <div className="flex flex-col gap-3 mb-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <Link
             href="/dashboard"
             className="text-sm text-gray-500 hover:text-gray-700"
@@ -159,6 +161,13 @@ export default async function ShiftPage({
             </Link>
             {isAdmin && <SyncButtons periodId={periodId} />}
           </div>
+        </div>
+        {isAdmin && (
+          <ShiftRequestLockToggle
+            periodId={periodId}
+            initialLocked={Boolean(period.shiftRequestsLocked)}
+          />
+        )}
         </div>
         <ShiftGrid
           initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo }))}
