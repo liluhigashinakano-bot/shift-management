@@ -210,8 +210,26 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
     if (!id) {
       return NextResponse.json({ error: "id が必要です" }, { status: 400 });
     }
-    await prisma.user.delete({ where: { id } });
-    return NextResponse.json({ ok: true });
+    try {
+      await prisma.$transaction(async (tx) => {
+        const u = await tx.user.findUnique({ where: { id } });
+        if (!u || u.role !== "cast") {
+          throw Object.assign(new Error("NOT_CAST"), { code: "NOT_CAST" });
+        }
+        await tx.shiftSlot.deleteMany({ where: { castId: id } });
+        await tx.shiftRequest.deleteMany({ where: { castId: id } });
+        await tx.shiftAdjustment.deleteMany({ where: { castId: id } });
+        await tx.user.delete({ where: { id } });
+      });
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      if (e && typeof e === "object" && (e as { code?: string }).code === "NOT_CAST") {
+        return NextResponse.json({ error: "キャストが見つかりません" }, { status: 404 });
+      }
+      console.error("[casts delete]", e);
+      const msg = e instanceof Error ? e.message : "削除に失敗しました";
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });

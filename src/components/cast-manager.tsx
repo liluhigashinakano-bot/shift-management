@@ -149,12 +149,17 @@ export function CastManager({ initialCasts, stores }: Props) {
 
   const handleDelete = async (id: string, castName: string) => {
     if (!confirm(`${castName}を削除しますか？`)) return;
-    await fetch("/api/casts", {
+    const res = await fetch("/api/casts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", id }),
     });
-    reload();
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      alert(json.error ?? `削除に失敗しました（HTTP ${res.status}）`);
+      return;
+    }
+    await reload();
   };
 
   const handleResetPassword = async (cast: Cast) => {
