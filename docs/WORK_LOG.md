@@ -140,3 +140,16 @@
 **Git:** コミット `ccc2617` / `main`
 
 ---
+
+### 2026-04-18（締切 UI 集約）
+
+**概要:** 希望／シフト表の2締切を「締切設定」1ボタン＋パネルに統合。メインボタンは `xs`（従来より小さく）。
+
+**変更ファイル（主なもの）:**
+- `src/components/shift-period-locks-panel.tsx`（新規）
+- `src/app/shifts/[storeId]/[periodId]/page.tsx`
+- 削除: `shift-request-lock-toggle.tsx`, `shift-slots-lock-toggle.tsx`
+
+**Git:** コミット `4e942a8` / `main`
+
+---

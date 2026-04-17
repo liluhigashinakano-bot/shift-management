@@ -4,8 +4,7 @@ import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
 import { ShiftGrid } from "@/components/shift-grid/shift-grid";
 import { SyncButtons } from "@/components/sync-buttons";
-import { ShiftRequestLockToggle } from "@/components/shift-request-lock-toggle";
-import { ShiftSlotsLockToggle } from "@/components/shift-slots-lock-toggle";
+import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
 import Link from "next/link";
 
 export default async function ShiftPage({
@@ -169,16 +168,11 @@ export default async function ShiftPage({
           </div>
         </div>
         {isAdmin && (
-          <div className="flex flex-wrap items-start gap-3">
-            <ShiftRequestLockToggle
-              periodId={periodId}
-              initialLocked={Boolean(period.shiftRequestsLocked)}
-            />
-            <ShiftSlotsLockToggle
-              periodId={periodId}
-              initialLocked={Boolean(period.shiftSlotsLocked)}
-            />
-          </div>
+          <ShiftPeriodLocksPanel
+            periodId={periodId}
+            initialRequestsLocked={Boolean(period.shiftRequestsLocked)}
+            initialSlotsLocked={Boolean(period.shiftSlotsLocked)}
+          />
         )}
         </div>
         <ShiftGrid
