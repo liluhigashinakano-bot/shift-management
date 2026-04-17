@@ -116,7 +116,7 @@
 - `src/components/shift-grid/cast-add-dialog.tsx`, `shift-grid.tsx`
 - `src/app/requests/.../page.tsx`, `docs/WORK_LOG.md`
 
-**Git:** （本コミットで追記）
+**Git:** コミット `f79ad93` / `main` / push 済み
 
 **メモ:** 本番反映後に `prisma migrate deploy` が必要。
 
