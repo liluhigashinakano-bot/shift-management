@@ -68,6 +68,6 @@
 - `src/app/globals.css`
 - `docs/WORK_LOG.md`
 
-**Git:** （本コミットで追記）
+**Git:** コミット `c7075db` / `main` / push 済み
 
 ---
