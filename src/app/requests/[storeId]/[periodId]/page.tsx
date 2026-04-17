@@ -147,40 +147,53 @@ export default async function RequestsPage({
         }}
       />
       <main className="max-w-[1400px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="flex items-center gap-4 mb-4">
-          {role !== "cast" && (
-            <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">
-              &larr; ダッシュボード
-            </Link>
-          )}
-          <h1 className="text-xl font-bold">
-            {period.store.name} - {period.year}年{period.month}月{halfLabel} シフト希望
-          </h1>
-          {role !== "cast" && (
-            <Link
-              href={`/shifts/${storeId}/${periodId}`}
-              className="text-sm text-pink-600 hover:text-pink-800 ml-auto"
-            >
-              シフト表を見る &rarr;
-            </Link>
-          )}
-          {role === "cast" && (
-            <div className="ml-auto flex items-center gap-3 text-sm">
-              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
-              <Link className="text-purple-600 hover:text-purple-800" href={`/confirmed/${storeId}/${periodId}`}>
-                確定シフト
+        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
+            {role !== "cast" && (
+              <Link
+                href="/dashboard"
+                className="mb-1 inline-block text-xs text-gray-500 hover:text-gray-700 sm:text-sm"
+              >
+                &larr; ダッシュボード
               </Link>
-              <Link className="text-purple-600 hover:text-purple-800" href={`/adjustments/${storeId}/${periodId}`}>
-                調整一覧
+            )}
+            <h1 className="text-[11px] font-bold leading-tight sm:text-sm md:text-base whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
+              {period.store.name}‐{period.year}年{period.month}月{halfLabel}
+            </h1>
+          </div>
+          {role !== "cast" && (
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+              <Link
+                href={`/shifts/${storeId}/${periodId}`}
+                className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-md border border-pink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-pink-600 shadow-sm hover:bg-pink-50 sm:text-sm whitespace-nowrap"
+              >
+                シフト表を見る &rarr;
               </Link>
+              <FormImportButton
+                periodId={periodId}
+                sheetsConfigured={sheetsOk}
+                disabled={period.shiftRequestsLocked || period.shiftSlotsLocked}
+              />
             </div>
           )}
-          {role !== "cast" && (
-            <FormImportButton
-              periodId={periodId}
-              sheetsConfigured={sheetsOk}
-              disabled={period.shiftRequestsLocked || period.shiftSlotsLocked}
-            />
+          {role === "cast" && (
+            <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
+              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
+              <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
+                <Link
+                  href={`/confirmed/${storeId}/${periodId}`}
+                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+                >
+                  確定シフト
+                </Link>
+                <Link
+                  href={`/adjustments/${storeId}/${periodId}`}
+                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+                >
+                  調整一覧
+                </Link>
+              </div>
+            </div>
           )}
         </div>
         {role === "cast" && googleFormUrl && (

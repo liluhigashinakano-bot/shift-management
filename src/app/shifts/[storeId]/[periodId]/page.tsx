@@ -137,8 +137,8 @@ export default async function ShiftPage({
           >
             &larr; ダッシュボード
           </Link>
-          <h1 className="text-xs sm:text-base md:text-xl font-bold shrink-0 whitespace-nowrap">
-            {period.store.name} - {period.year}年{period.month}月{halfLabel}
+          <h1 className="text-[11px] sm:text-base md:text-xl font-bold shrink-0 whitespace-nowrap">
+            {period.store.name}‐{period.year}年{period.month}月{halfLabel}
           </h1>
           {isAdmin && (
             <div className="shrink-0">
@@ -152,19 +152,19 @@ export default async function ShiftPage({
           <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
             <Link
               href={`/confirmed/${storeId}/${periodId}`}
-              className="text-[10px] sm:text-xs text-purple-600 hover:text-purple-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-purple-200 rounded whitespace-nowrap"
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-purple-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:min-h-9 sm:px-2.5 sm:py-1 sm:text-xs whitespace-nowrap"
             >
               確定シフト
             </Link>
             <Link
               href={`/requests/${storeId}/${periodId}`}
-              className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-blue-200 rounded whitespace-nowrap"
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-blue-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-blue-700 shadow-sm hover:bg-blue-50 sm:min-h-9 sm:px-2.5 sm:py-1 sm:text-xs whitespace-nowrap"
             >
               希望一覧
             </Link>
             <Link
               href={`/adjustments/${storeId}/${periodId}`}
-              className="text-[10px] sm:text-xs text-orange-600 hover:text-orange-800 px-1.5 sm:px-2 py-0.5 sm:py-1 border border-orange-200 rounded whitespace-nowrap"
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-orange-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-orange-700 shadow-sm hover:bg-orange-50 sm:min-h-9 sm:px-2.5 sm:py-1 sm:text-xs whitespace-nowrap"
             >
               調整一覧
             </Link>

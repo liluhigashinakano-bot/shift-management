@@ -117,21 +117,26 @@ export function AdjustmentTable({
   return (
     <div className="space-y-4">
       {/* キャスト選択 */}
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-bold text-purple-700">キャスト選択:</label>
-        <select
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm min-w-[200px]"
-          value={selectedCast}
-          onChange={(e) => setSelectedCast(e.target.value)}
-        >
-          {adjustedCasts.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}{c.storeName ? ` (${c.storeName})` : ""}
-            </option>
-          ))}
-        </select>
-        <span className="text-sm text-gray-500">
-          調整: {castAdjs.filter((a) => a.action !== "cut").length}件 / 削除: {castAdjs.filter((a) => a.action === "cut").length}件
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <label className="shrink-0 whitespace-nowrap text-[10px] font-bold text-purple-700 sm:text-sm">
+            キャスト選択:
+          </label>
+          <select
+            className="min-h-9 min-w-0 flex-1 border border-gray-300 rounded-md bg-white px-2 py-1.5 text-[11px] sm:min-w-[200px] sm:flex-none sm:px-3 sm:py-2 sm:text-sm"
+            value={selectedCast}
+            onChange={(e) => setSelectedCast(e.target.value)}
+          >
+            {adjustedCasts.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.storeName ? ` (${c.storeName})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="shrink-0 whitespace-nowrap text-[10px] text-gray-500 sm:text-sm">
+          調整: {castAdjs.filter((a) => a.action !== "cut").length}件 / 削除:{" "}
+          {castAdjs.filter((a) => a.action === "cut").length}件
         </span>
       </div>
 

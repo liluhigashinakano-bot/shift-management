@@ -179,12 +179,8 @@ export default async function AdjustmentsPage({
                 &larr; ダッシュボード
               </Link>
             )}
-            <h1 className="text-sm font-bold leading-snug sm:text-lg md:text-xl">
-              <span className="block">
-                {period.store.name}
-                {period.year}年{period.month}月{halfLabel}
-              </span>
-              <span className="mt-0.5 block text-xs font-bold sm:text-sm md:text-base">シフト希望</span>
+            <h1 className="text-[11px] font-bold leading-tight sm:text-sm md:text-base whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
+              {period.store.name}‐{period.year}年{period.month}月{halfLabel}
             </h1>
           </div>
           {role !== "cast" && (
