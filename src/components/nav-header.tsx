@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getPublicOrigin } from "@/lib/public-origin";
 import { signOut } from "next-auth/react";
 
 type Props = {
@@ -71,7 +72,7 @@ export function NavHeader({ user }: Props) {
               // サーバー側の signOut リダイレクトが 0.0.0.0:PORT を返す環境があるため、
               // セッション破棄だけ任せて、遷移先はブラウザで確定させる
               await signOut({ redirect: false });
-              window.location.assign(`${window.location.origin}/login`);
+              window.location.assign(`${getPublicOrigin()}/login`);
             }}
           >
             ログアウト
