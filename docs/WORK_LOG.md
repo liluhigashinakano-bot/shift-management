@@ -137,6 +137,6 @@
 
 **メモ:** 本番 DB に `npx prisma migrate deploy`（マイグレーション `20260418140000_shift_slots_locked`）。
 
-**Git:** コミット `1745d05` / `main`
+**Git:** コミット `ccc2617` / `main`
 
 ---
