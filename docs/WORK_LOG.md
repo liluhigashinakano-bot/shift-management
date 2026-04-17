@@ -150,6 +150,6 @@
 - `src/app/shifts/[storeId]/[periodId]/page.tsx`
 - 削除: `shift-request-lock-toggle.tsx`, `shift-slots-lock-toggle.tsx`
 
-**Git:** コミット `4e942a8` / `main`
+**Git:** コミット `258dab6` / `main`
 
 ---
