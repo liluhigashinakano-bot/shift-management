@@ -49,7 +49,7 @@ export default function LoginPage() {
     if (res.error) {
       const msg =
         res.error === "CredentialsSignin"
-          ? "メール・キャストIDまたはパスワードが正しくありません（管理者: admin@shift.local）"
+          ? "キャストIDまたはパスワードが正しくありません"
           : `ログインに失敗しました（${res.error}）`;
       setError(msg);
       setLoading(false);
@@ -63,7 +63,7 @@ export default function LoginPage() {
         if (err) {
           const msg =
             err === "CredentialsSignin"
-              ? "メール・キャストIDまたはパスワードが正しくありません（管理者: admin@shift.local）"
+              ? "キャストIDまたはパスワードが正しくありません"
               : `ログインに失敗しました（${err}）`;
           setError(msg);
           setLoading(false);
@@ -102,14 +102,14 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">メールアドレスまたはキャストID</Label>
+              <Label htmlFor="email">キャストID</Label>
               <Input
                 id="email"
                 name="email"
                 type="text"
                 required
                 autoComplete="username"
-                placeholder="admin@shift.local または りりむ"
+                placeholder="キャストID"
               />
             </div>
             <div className="space-y-2">
@@ -136,10 +136,7 @@ export default function LoginPage() {
             </Button>
           </form>
           <div className="mt-4 p-3 bg-gray-50 rounded text-xs text-gray-500 space-y-1">
-            <p>テストアカウント:</p>
-            <p>管理者: admin@shift.local / admin123</p>
-            <p>社員: 吉田@shift.local / staff123</p>
-            <p>キャスト: りりむ（キャストID）または りりむ@cast.local / cast123</p>
+            <p>登録したキャストIDとパスワードでログインしてください。</p>
           </div>
         </CardContent>
       </Card>
