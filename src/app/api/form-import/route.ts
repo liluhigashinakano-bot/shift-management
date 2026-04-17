@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { readSheet, isSheetsConfigured } from "@/lib/google-sheets";
+import { auth } from "@/lib/auth";
+import { normalizeSheetDateToYmd } from "@/lib/sheet-date";
+
+function requireStaff(session: any) {
+  if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const role = (session.user as any).role as string | undefined;
+  if (role !== "admin" && role !== "employee") {
+    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  return { ok: true as const };
+}
 
 // POST: Googleフォームの回答（Google Sheets経由）をシフト希望に取り込み
 // フォームの回答シートの想定構造:
 // A列: タイムスタンプ, B列: メールアドレス, C列: 日付(YYYY-MM-DD), D列: 出勤時間(数値), E列: 退勤時間(数値), F列: メモ
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  const guard = requireStaff(session);
+  if (!guard.ok) return guard.res;
+
   const body = await req.json();
   const { sheetName, periodId } = body;
 
@@ -53,7 +68,7 @@ export async function POST(req: NextRequest) {
       if (!row || row.length < 5) continue;
 
       const email = String(row[1] || "").trim().toLowerCase();
-      const dateStr = String(row[2] || "").trim();
+      const dateStr = normalizeSheetDateToYmd(row[2]);
       const startTime = Number(row[3]);
       const endTime = Number(row[4]);
       const notes = row[5] ? String(row[5]).trim() : null;
@@ -67,6 +82,12 @@ export async function POST(req: NextRequest) {
       }
 
       // 日付をdayIdに変換
+      if (!dateStr) {
+        errors.push(`日付が読み取れません: ${String(row[2])} (${cast.name})`);
+        skipped++;
+        continue;
+      }
+
       const dayId = dayMap.get(dateStr);
       if (!dayId) {
         errors.push(`期間外の日付: ${dateStr} (${cast.name})`);
@@ -150,8 +171,23 @@ export async function POST(req: NextRequest) {
 
 // GET: 取り込み状況の確認
 export async function GET() {
+  const session = await auth();
+  const guard = requireStaff(session);
+  if (!guard.ok) return guard.res;
+
   return NextResponse.json({
     configured: isSheetsConfigured(),
-    description: "Googleフォーム回答シートからシフト希望を取り込みます。シートの構造: A列=タイムスタンプ, B列=メールアドレス, C列=日付(YYYY-MM-DD), D列=出勤時間(数値例:20), E列=退勤時間(数値例:25), F列=メモ",
+    description:
+      "Googleフォーム回答シートからシフト希望を取り込みます。シートの構造: A列=タイムスタンプ, B列=メールアドレス, C列=日付(YYYY-MM-DD またはスラッシュ), D列=出勤時間(数値例:20), E列=退勤時間(数値例:25), F列=メモ",
+    formSetup: {
+      questionOrder: [
+        "メールアドレス（ログインと同じ）",
+        "日付（YYYY-MM-DD 推奨）",
+        "出勤（数値 19〜29、0.5刻み。例: 20.5=20:30）",
+        "退勤（同上）",
+        "備考（任意）",
+      ],
+      responseSheetNameDefault: "フォームの回答 1",
+    },
   });
 }

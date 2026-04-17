@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { normalizeLoginCredential } from "@/lib/login-email";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,18 +20,72 @@ export default function LoginPage() {
     setError("");
 
     const formData = new FormData(e.currentTarget);
+    const emailRaw = formData.get("email");
+    const passwordRaw = formData.get("password");
+    const email = normalizeLoginCredential(
+      typeof emailRaw === "string" ? emailRaw : String(emailRaw ?? ""),
+    );
+    const password = typeof passwordRaw === "string" ? passwordRaw.trim() : String(passwordRaw ?? "").trim();
+
     const res = await signIn("credentials", {
-      email: formData.get("email"),
-      password: formData.get("password"),
+      email,
+      password,
       redirect: false,
     });
 
-    if (res?.error) {
-      setError("メールアドレスまたはパスワードが正しくありません");
+    if (!res) {
+      setError("ログイン処理に失敗しました（応答がありません）");
       setLoading(false);
-    } else {
-      router.push("/dashboard");
+      return;
     }
+
+    if (!res.ok) {
+      setError(`ログインに失敗しました（HTTP ${res.status}）`);
+      setLoading(false);
+      return;
+    }
+
+    // redirect:false の場合、失敗でも res.error が空のことがあるので URL も見る
+    if (res.error) {
+      const msg =
+        res.error === "CredentialsSignin"
+          ? "メール・キャストIDまたはパスワードが正しくありません（管理者: admin@shift.local）"
+          : `ログインに失敗しました（${res.error}）`;
+      setError(msg);
+      setLoading(false);
+      return;
+    }
+
+    if (res.url) {
+      try {
+        const u = new URL(res.url);
+        const err = u.searchParams.get("error");
+        if (err) {
+          const msg =
+            err === "CredentialsSignin"
+              ? "メール・キャストIDまたはパスワードが正しくありません（管理者: admin@shift.local）"
+              : `ログインに失敗しました（${err}）`;
+          setError(msg);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // セッション Cookie がブラウザに反映されるまで待ってから遷移（サーバー側 auth() が null になるのを防ぐ）
+    const session = await getSession();
+    if (!session) {
+      setError(
+        "ログインは通りましたが、セッションを確認できませんでした。開発サーバーを一度止めて起動し直し、同じアドレス（例: http://localhost:3001）で開き直してください。",
+      );
+      setLoading(false);
+      return;
+    }
+
+    router.push("/");
+    router.refresh();
   }
 
   return (
@@ -47,13 +102,14 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">メールアドレス</Label>
+              <Label htmlFor="email">メールアドレスまたはキャストID</Label>
               <Input
                 id="email"
                 name="email"
-                type="email"
+                type="text"
                 required
-                placeholder="admin@shift.local"
+                autoComplete="username"
+                placeholder="admin@shift.local または りりむ"
               />
             </div>
             <div className="space-y-2">
@@ -83,7 +139,7 @@ export default function LoginPage() {
             <p>テストアカウント:</p>
             <p>管理者: admin@shift.local / admin123</p>
             <p>社員: 吉田@shift.local / staff123</p>
-            <p>キャスト: りりむ@cast.local / cast123</p>
+            <p>キャスト: りりむ（キャストID）または りりむ@cast.local / cast123</p>
           </div>
         </CardContent>
       </Card>

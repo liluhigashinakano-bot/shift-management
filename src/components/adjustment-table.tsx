@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
 
 type ShiftSlot = {
   id: string;
@@ -156,7 +156,8 @@ export function AdjustmentTable({
                   </th>
                   {week.map((day, idx) => {
                     const d = new Date(day.date);
-                    const bg = dayHeaderBg(day.dayOfWeek);
+                    const dow = getJapaneseDayOfWeek(d);
+                    const bg = dayHeaderBg(dow);
                     const isLast = idx === week.length - 1;
                     return (
                       <th
@@ -164,7 +165,7 @@ export function AdjustmentTable({
                         colSpan={2}
                         className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       >
-                        {d.getDate()}({day.dayOfWeek})
+                        {d.getDate()}({dow})
                       </th>
                     );
                   })}
@@ -273,7 +274,7 @@ export function AdjustmentTable({
             <tbody>
               {castAdjs.map((a) => {
                 const d = new Date(a.day.date);
-                const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${a.day.dayOfWeek})`;
+                const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
                 return (
                   <tr key={a.id} className="hover:bg-gray-50">
                     <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>

@@ -8,6 +8,9 @@ export default async function CastsPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
+  const role = (session.user as any).role as string | undefined;
+  if (role === "cast") redirect("/mypage");
+
   const casts = await prisma.user.findMany({
     where: { role: "cast" },
     include: { store: { select: { id: true, name: true } } },

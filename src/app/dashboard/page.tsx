@@ -1,32 +1,144 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { ensureShiftPeriod } from "@/lib/ensure-shift-period";
 import { NavHeader } from "@/components/nav-header";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-export default async function DashboardPage() {
+// クエリ（searchParams）の変更（例: ?year=...&start=...）を必ず反映する
+export const dynamic = "force-dynamic";
+
+type ShiftHalf = "first" | "second";
+type ShiftPeriodKey = { year: number; month: number; half: ShiftHalf };
+
+function periodIndex(p: ShiftPeriodKey): number {
+  // 半月を 0/1 として単純に連番化して比較する
+  const halfIdx = p.half === "first" ? 0 : 1;
+  return p.year * 24 + (p.month - 1) * 2 + halfIdx;
+}
+
+function nextPeriod(p: ShiftPeriodKey): ShiftPeriodKey {
+  if (p.half === "first") return { year: p.year, month: p.month, half: "second" };
+  const nextMonth = p.month === 12 ? 1 : p.month + 1;
+  const nextYear = p.month === 12 ? p.year + 1 : p.year;
+  return { year: nextYear, month: nextMonth, half: "first" };
+}
+
+function periodFromNow(now: Date): ShiftPeriodKey {
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const half: ShiftHalf = now.getDate() <= 15 ? "first" : "second";
+  return { year, month, half };
+}
+
+function halfLabel(half: ShiftHalf): string {
+  return half === "first" ? "前半" : "後半";
+}
+
+function makePeriodKeyString(p: ShiftPeriodKey): string {
+  return `${p.year}-${p.month}-${p.half}`;
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = searchParams ? await searchParams : undefined;
   const session = await auth();
   if (!session) redirect("/login");
 
+  const role = (session.user as any).role as string | undefined;
+  if (role === "cast") redirect("/mypage");
+
   const stores = await prisma.store.findMany({ orderBy: { name: "asc" } });
 
-  // 現在の年月と前半/後半を計算
+  // 表示対象（現在= now から、未来は「次の期間」まで）
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const half = now.getDate() <= 15 ? "first" : "second";
+  const currentPeriod = periodFromNow(now);
+  const maxFuturePeriod = nextPeriod(currentPeriod); // ここまでが選択/表示可能
 
-  // 各店舗のシフト期間を取得
+  const allowedYears = [2024, 2025, 2026];
+  let selectedYear = (() => {
+    const raw = sp?.year;
+    const s = Array.isArray(raw) ? raw[0] : raw;
+    const n = s ? Number(s) : NaN;
+    return allowedYears.includes(n) ? n : currentPeriod.year;
+  })();
+
+  // 未来の上限（maxFuturePeriod）より先の年は丸ごと選ばせない
+  if (selectedYear > maxFuturePeriod.year) selectedYear = maxFuturePeriod.year;
+
+  // 初期表示は「現在の期間」を起点にする（未来は次の期間まで表示できる）
+  const candidateDefaultStart: ShiftPeriodKey = { year: selectedYear, month: currentPeriod.month, half: currentPeriod.half };
+  const defaultStart: ShiftPeriodKey =
+    periodIndex(candidateDefaultStart) <= periodIndex(maxFuturePeriod)
+      ? candidateDefaultStart
+      : { year: selectedYear, month: maxFuturePeriod.month, half: "first" };
+  const selectedStart = (() => {
+    const rawStart = sp?.start;
+    const s = Array.isArray(rawStart) ? rawStart[0] : rawStart;
+    if (!s) return defaultStart;
+    // "month-half" (ex: "4-first")
+    const [mRaw, hRaw] = s.split("-");
+    const month = Number(mRaw);
+    const half = hRaw === "second" ? "second" : "first";
+    if (!month || month < 1 || month > 12) return defaultStart;
+    const candidate: ShiftPeriodKey = { year: selectedYear, month, half };
+    // futureを超えていたらデフォルトに戻す（=表示可能な範囲を担保）
+    if (periodIndex(candidate) > periodIndex(maxFuturePeriod)) return defaultStart;
+    return candidate;
+  })();
+
+  const startOptionsForSelectedYear: ShiftPeriodKey[] = (() => {
+    const maxIdx = periodIndex(maxFuturePeriod);
+    const opts: ShiftPeriodKey[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const first: ShiftPeriodKey = { year: selectedYear, month: m, half: "first" };
+      const second: ShiftPeriodKey = { year: selectedYear, month: m, half: "second" };
+      if (periodIndex(first) <= maxIdx) opts.push(first);
+      if (periodIndex(second) <= maxIdx) opts.push(second);
+    }
+    return opts;
+  })();
+
+  // 過去はすべて選択可能、未来は selectedStart 作成時点で上限チェック済み。
+  // ここで defaultStart に戻してしまうと「URLは変わるのに表示が変わらない」状態になるため、
+  // 検証済みの selectedStart をそのまま採用する。
+  const effectiveStart = selectedStart;
+
+  const effectiveNext = nextPeriod(effectiveStart);
+  const effectiveShowSecondRow = periodIndex(effectiveNext) <= periodIndex(maxFuturePeriod);
+  const effectiveDisplayPeriods: ShiftPeriodKey[] = effectiveShowSecondRow ? [effectiveStart, effectiveNext] : [effectiveStart];
+
+  // 表示対象の店舗×期間は未作成なら自動で作成（手動「＋作成」不要）
+  for (const store of stores) {
+    for (const p of effectiveDisplayPeriods) {
+      await ensureShiftPeriod(store.id, p.year, p.month, p.half);
+    }
+  }
+
+  // 各店舗のシフト期間を取得（表示に必要な期間だけ）
   const periods = await prisma.shiftPeriod.findMany({
-    where: { year, month },
+    where: {
+      OR: effectiveDisplayPeriods.map((p) => ({
+        year: p.year,
+        month: p.month,
+        half: p.half,
+      })),
+    },
     include: { store: true, _count: { select: { shiftDays: true } } },
   });
 
-  const periodMap = new Map(
-    periods.map((p) => [`${p.storeId}-${p.half}`, p])
-  );
+  const periodMap = new Map<string, (typeof periods)[number]>();
+  for (const p of periods) {
+    periodMap.set(
+      `${p.storeId}-${makePeriodKeyString({ year: p.year, month: p.month, half: p.half as ShiftHalf })}`,
+      p
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -38,14 +150,57 @@ export default async function DashboardPage() {
         }}
       />
       <main className="max-w-[1800px] mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold mb-6">
-          {year}年{month}月 シフト管理
-        </h1>
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
+          <h1 className="text-2xl font-bold">
+            {effectiveDisplayPeriods[0].year}年{effectiveDisplayPeriods[0].month}月 {halfLabel(effectiveDisplayPeriods[0].half)}〜
+            {effectiveDisplayPeriods.length === 2
+              ? `${effectiveDisplayPeriods[1].year !== effectiveDisplayPeriods[0].year ? effectiveDisplayPeriods[1].year + "年" : ""}${effectiveDisplayPeriods[1].month}月${halfLabel(effectiveDisplayPeriods[1].half)}`
+              : ""}
+            {' '}シフト管理
+          </h1>
+
+          <form method="get" className="flex items-center gap-3">
+            <label className="text-sm font-bold text-gray-600">
+              年
+              <select name="year" defaultValue={String(selectedYear)} className="ml-2 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                {allowedYears.map((y) => (
+                  <option key={y} value={String(y)}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm font-bold text-gray-600">
+              期間
+              <select name="start" defaultValue={`${effectiveStart.month}-${effectiveStart.half}`} className="ml-2 border border-gray-300 rounded-md px-2 py-1 text-sm">
+                {startOptionsForSelectedYear.length === 0 ? (
+                  <option value={`${effectiveStart.month}-${effectiveStart.half}`}>
+                    {effectiveStart.month}月{halfLabel(effectiveStart.half)}
+                  </option>
+                ) : (
+                  startOptionsForSelectedYear.map((p) => (
+                    <option key={makePeriodKeyString(p)} value={`${p.month}-${p.half}`}>
+                      {p.month}月{halfLabel(p.half)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="text-sm text-gray-600 hover:text-pink-600 font-medium border border-gray-200 rounded-md px-3 py-1"
+            >
+              表示
+            </button>
+          </form>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {stores.map((store) => {
-            const firstPeriod = periodMap.get(`${store.id}-first`);
-            const secondPeriod = periodMap.get(`${store.id}-second`);
+            const periodFor = (p: ShiftPeriodKey) => {
+              const key = `${store.id}-${makePeriodKeyString(p)}`;
+              return periodMap.get(key);
+            };
 
             return (
               <Card key={store.id} className="hover:shadow-md transition-shadow">
@@ -55,16 +210,16 @@ export default async function DashboardPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {(["first", "second"] as const).map((h) => {
-                    const period = h === "first" ? firstPeriod : secondPeriod;
-                    const label = h === "first" ? "前半" : "後半";
-                    const isCurrent = h === half;
+                  {effectiveDisplayPeriods.map((p) => {
+                    const period = periodFor(p);
+                    const label = halfLabel(p.half);
+                    const isCurrent = p.year === currentPeriod.year && p.month === currentPeriod.month && p.half === currentPeriod.half;
 
                     return (
-                      <div key={h} className="flex items-center justify-between">
+                      <div key={makePeriodKeyString(p)} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">
-                            {month}月{label}
+                            {p.month}月{label}
                           </span>
                           {isCurrent && (
                             <Badge
@@ -75,7 +230,7 @@ export default async function DashboardPage() {
                             </Badge>
                           )}
                         </div>
-                        {period ? (
+                        {period && (
                           <div className="flex items-center gap-2">
                             <Link
                               href={`/requests/${store.id}/${period.id}`}
@@ -96,13 +251,6 @@ export default async function DashboardPage() {
                               シフト表
                             </Link>
                           </div>
-                        ) : (
-                          <CreatePeriodButton
-                            storeId={store.id}
-                            year={year}
-                            month={month}
-                            half={h}
-                          />
                         )}
                       </div>
                     );
@@ -114,60 +262,5 @@ export default async function DashboardPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-function CreatePeriodButton({
-  storeId,
-  year,
-  month,
-  half,
-}: {
-  storeId: string;
-  year: number;
-  month: number;
-  half: string;
-}) {
-  async function createPeriod() {
-    "use server";
-    const { prisma: db } = await import("@/lib/db");
-
-    const period = await db.shiftPeriod.create({
-      data: { storeId, year, month, half },
-    });
-
-    // 日付を生成
-    const startDay = half === "first" ? 1 : 16;
-    const endDay =
-      half === "first"
-        ? 15
-        : new Date(year, month, 0).getDate();
-
-    const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
-
-    for (let d = startDay; d <= endDay; d++) {
-      const date = new Date(year, month - 1, d);
-      await db.shiftDay.create({
-        data: {
-          periodId: period.id,
-          date,
-          dayOfWeek: dayNames[date.getDay()],
-        },
-      });
-    }
-
-    const { redirect: redir } = await import("next/navigation");
-    redir(`/shifts/${storeId}/${period.id}`);
-  }
-
-  return (
-    <form action={createPeriod}>
-      <button
-        type="submit"
-        className="text-sm text-gray-400 hover:text-pink-600 font-medium"
-      >
-        + 作成
-      </button>
-    </form>
   );
 }

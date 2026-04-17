@@ -2,40 +2,79 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compareSync } from "bcryptjs";
 import { prisma } from "./db";
+import { findUserIdForLogin } from "./auth-lookup-user";
+
+// Auth.js は JWT 暗号化に secret が必須。.env が読み込まれないケースでも開発を止めないためのフォールバック
+function resolveAuthSecret(): string {
+  const fromEnv = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  if (process.env.NODE_ENV !== "production") {
+    return "shift-management-dev-secret-not-for-production";
+  }
+  throw new Error("AUTH_SECRET または NEXTAUTH_SECRET を設定してください");
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
+  secret: resolveAuthSecret(),
+  debug: process.env.NODE_ENV !== "production",
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60,
+  },
   providers: [
     Credentials({
       credentials: {
-        email: { label: "メールアドレス", type: "email" },
+        email: { label: "メールまたはキャストID", type: "text" },
         password: { label: "パスワード", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: { store: true },
-        });
+        const password = String(credentials.password).trim();
 
-        if (!user) return null;
-        if (!compareSync(credentials.password as string, user.passwordHash))
+        try {
+          const rawLogin = String(credentials.email ?? "");
+          const userId = await findUserIdForLogin(rawLogin);
+          const user = userId
+            ? await prisma.user.findUnique({
+                where: { id: userId },
+                include: { store: true },
+              })
+            : null;
+
+          if (!user) {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("[auth] credentials: ユーザーが見つかりません:", rawLogin);
+            }
+            return null;
+          }
+          if (!compareSync(password, user.passwordHash)) {
+            if (process.env.NODE_ENV !== "production") {
+              console.warn("[auth] credentials: パスワード不一致:", rawLogin);
+            }
+            return null;
+          }
+
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            storeId: user.storeId,
+            storeName: user.store?.name,
+          };
+        } catch (e) {
+          console.error("[auth][authorize]", e);
           return null;
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          storeId: user.storeId,
-          storeName: user.store?.name,
-        };
+        }
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.sub = user.id;
         token.role = (user as any).role;
         token.storeId = (user as any).storeId;
         token.storeName = (user as any).storeName;
@@ -44,7 +83,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.sub!;
+        session.user.id = (token.sub as string) ?? "";
         (session.user as any).role = token.role;
         (session.user as any).storeId = token.storeId;
         (session.user as any).storeName = token.storeName;
@@ -55,5 +94,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   pages: {
     signIn: "/login",
   },
-  secret: process.env.NEXTAUTH_SECRET,
 });

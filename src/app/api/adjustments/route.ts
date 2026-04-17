@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
+
+function getRole(session: any) {
+  return (session?.user as any)?.role as string | undefined;
+}
 
 // GET: 調整一覧取得
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = getRole(session);
+
   const periodId = req.nextUrl.searchParams.get("periodId");
   if (!periodId) {
     return NextResponse.json({ error: "periodId required" }, { status: 400 });
@@ -16,7 +25,10 @@ export async function GET(req: NextRequest) {
   const dayIds = days.map((d) => d.id);
 
   const adjustments = await prisma.shiftAdjustment.findMany({
-    where: { dayId: { in: dayIds } },
+    where: {
+      dayId: { in: dayIds },
+      ...(role === "cast" ? { castId: session.user.id } : {}),
+    },
     include: {
       cast: { select: { id: true, name: true, store: { select: { name: true } } } },
       day: { select: { date: true, dayOfWeek: true } },
@@ -29,6 +41,11 @@ export async function GET(req: NextRequest) {
 
 // POST: 調整記録を作成
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = getRole(session);
+  if (role === "cast") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const body = await req.json();
   const { action } = body;
 

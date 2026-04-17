@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modal";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
 
 type Day = { id: string; date: string; dayOfWeek: string };
 type Cast = { id: string; name: string; storeName: string | null };
@@ -246,9 +246,10 @@ export function RequestForm({
               <Label>出勤希望日を選択</Label>
               {days.map((day) => {
                 const d = new Date(day.date);
-                const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
+                const dow = getJapaneseDayOfWeek(d);
+                const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${dow})`;
                 const entry = entries[day.date];
-                const isWeekend = day.dayOfWeek === "土" || day.dayOfWeek === "日";
+                const isWeekend = dow === "土" || dow === "日";
 
                 return (
                   <div

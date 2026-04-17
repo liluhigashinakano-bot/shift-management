@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import {
+  TIME_SLOTS,
+  formatTimeSlot,
+  getJapaneseDayOfWeek,
+  hideEndCastNameForWishEnd29,
+} from "@/lib/shift-utils";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
@@ -43,6 +48,8 @@ type Props = {
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   helpSlotsByDay?: Record<string, HelpSlot[]>;
   storeName?: string;
+  /** 退勤29:00希望時に退勤列の名前を隠す判定用 */
+  shiftRequests?: { castId: string; endTime: number; date: string }[];
 };
 
 function dayHeaderBg(dow: string): string {
@@ -84,7 +91,14 @@ function countStyle(count: number): React.CSSProperties {
   return { backgroundColor: bg, color: fg };
 }
 
-export function ConfirmedShift({ initialData, assignedCasts, allCasts, helpSlotsByDay, storeName }: Props) {
+export function ConfirmedShift({
+  initialData,
+  assignedCasts,
+  allCasts,
+  helpSlotsByDay,
+  storeName,
+  shiftRequests = [],
+}: Props) {
   const [selectedCast, setSelectedCast] = useState("");
   const [showSendList, setShowSendList] = useState(false);
   const data = initialData;
@@ -170,7 +184,8 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts, helpSlots
                   </th>
                   {week.map((day, idx) => {
                     const d = new Date(day.date);
-                    const bg = dayHeaderBg(day.dayOfWeek);
+                    const dow = getJapaneseDayOfWeek(d);
+                    const bg = dayHeaderBg(dow);
                     const isLast = idx === week.length - 1;
                     return (
                       <th
@@ -179,7 +194,7 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts, helpSlots
                         className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] relative ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       >
                         <span>{d.getDate()}</span>
-                        <span className="ml-1 text-[10px] font-normal">({day.dayOfWeek})</span>
+                        <span className="ml-1 text-[10px] font-normal">({dow})</span>
                       </th>
                     );
                   })}
@@ -254,6 +269,14 @@ export function ConfirmedShift({ initialData, assignedCasts, allCasts, helpSlots
                             >
                               <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
                                 {endCasts.map((s) => {
+                                  const reqHide = shiftRequests.find(
+                                    (r) =>
+                                      r.castId === s.castId &&
+                                      new Date(r.date).toISOString().slice(0, 10) ===
+                                        new Date(day.date).toISOString().slice(0, 10) &&
+                                      hideEndCastNameForWishEnd29(r.endTime),
+                                  );
+                                  if (reqHide) return null;
                                   const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
                                   const displayName = helpStore
@@ -363,7 +386,7 @@ function SendListModal({
       const startTime = castSlots[0].timeSlot;
       const endTime = castSlots[castSlots.length - 1].timeSlot + 0.5;
       const d = new Date(day.date);
-      const dateStr = `${month}月${d.getDate()}日(${day.dayOfWeek})`;
+      const dateStr = `${month}月${d.getDate()}日(${getJapaneseDayOfWeek(d)})`;
       lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}`);
     }
     return lines.join("\n");

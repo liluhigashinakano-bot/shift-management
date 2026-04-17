@@ -13,6 +13,8 @@ export default async function ShiftPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  const role = (session.user as any).role as string | undefined;
+  if (role === "cast") redirect("/mypage");
 
   const { storeId, periodId } = await params;
 

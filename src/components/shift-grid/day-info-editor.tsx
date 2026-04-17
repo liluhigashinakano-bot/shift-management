@@ -5,6 +5,7 @@ import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { getJapaneseDayOfWeek } from "@/lib/shift-utils";
 
 type ShiftDay = {
   id: string;
@@ -25,7 +26,7 @@ type Props = {
 
 export function DayInfoEditor({ day, onClose, onSaved }: Props) {
   const d = new Date(day.date);
-  const label = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
+  const label = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
 
   const [targetBudget, setTargetBudget] = useState(
     day.targetBudget?.toString() ?? ""

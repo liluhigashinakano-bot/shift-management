@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
 import { ConfirmedShift } from "@/components/confirmed-shift";
+import { CastPeriodSelector } from "@/components/cast-period-selector";
 import Link from "next/link";
+import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
 
 export default async function ConfirmedPage({
   params,
@@ -12,6 +14,8 @@ export default async function ConfirmedPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  const role = (session.user as any).role as string | undefined;
+  const userId = session.user.id;
 
   const { storeId, periodId } = await params;
 
@@ -33,6 +37,26 @@ export default async function ConfirmedPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
+  const selectablePeriods = await (async () => {
+    if (role !== "cast") return [];
+    const now = new Date();
+    const maxFuture = nextPeriod(periodFromNow(now));
+    const maxIdx = periodIndex(maxFuture);
+    const all = await prisma.shiftPeriod.findMany({
+      where: { storeId },
+      select: { id: true, year: true, month: true, half: true },
+      orderBy: [{ year: "asc" }, { month: "asc" }, { half: "asc" }],
+    });
+    return all.filter((p) => periodIndex({ year: p.year, month: p.month, half: p.half as any }) <= maxIdx) as any[];
+  })();
+
+  if (role === "cast") {
+    // 自分の分だけ（自店舗分）
+    for (const day of period.shiftDays) {
+      (day.shiftSlots as any[]) = day.shiftSlots.filter((s) => s.castId === userId);
+    }
+  }
+
   // この店舗のシフトに入っているキャスト一覧
   const castMap = new Map<string, string>();
   for (const day of period.shiftDays) {
@@ -41,9 +65,11 @@ export default async function ConfirmedPage({
     }
   }
 
-  // この店舗所属キャストの他店舗ヘルプ出勤も取得
+  // 他店舗ヘルプ出勤
+  // staff: 店舗所属キャスト全員分
+  // cast: 自分の分だけ
   const storeCasts = await prisma.user.findMany({
-    where: { storeId, role: "cast" },
+    where: role === "cast" ? { id: userId } : { storeId, role: "cast" },
     select: { id: true, name: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);
@@ -103,9 +129,14 @@ export default async function ConfirmedPage({
   const assignedCasts = [...castMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
   const allCasts = await prisma.user.findMany({
-    where: { role: "cast" },
+    where: role === "cast" ? { id: userId } : { role: "cast" },
     include: { store: { select: { id: true, name: true } } },
     orderBy: { name: "asc" },
+  });
+
+  const shiftRequestsForHide = await prisma.shiftRequest.findMany({
+    where: { periodId },
+    select: { castId: true, endTime: true, date: true },
   });
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
@@ -121,15 +152,28 @@ export default async function ConfirmedPage({
       />
       <main className="max-w-[1800px] mx-auto px-4 py-4">
         <div className="flex items-center gap-4 mb-4 flex-wrap">
-          <Link
-            href={`/shifts/${storeId}/${periodId}`}
-            className="text-sm text-gray-500 hover:text-gray-700"
-          >
-            &larr; シフト表に戻る
-          </Link>
+          {role !== "cast" && (
+            <Link
+              href={`/shifts/${storeId}/${periodId}`}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              &larr; シフト表に戻る
+            </Link>
+          )}
           <h1 className="text-xl font-bold">
             {period.store.name} - {period.year}年{period.month}月{halfLabel} 確定シフト
           </h1>
+          {role === "cast" && (
+            <div className="ml-auto flex items-center gap-3 text-sm">
+              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
+              <Link className="text-purple-600 hover:text-purple-800" href={`/requests/${storeId}/${periodId}`}>
+                希望一覧
+              </Link>
+              <Link className="text-purple-600 hover:text-purple-800" href={`/adjustments/${storeId}/${periodId}`}>
+                調整一覧
+              </Link>
+            </div>
+          )}
         </div>
         <ConfirmedShift
           initialData={JSON.parse(JSON.stringify(period))}
@@ -137,6 +181,11 @@ export default async function ConfirmedPage({
           allCasts={allCasts.map((c) => ({ id: c.id, name: c.name, store: c.store }))}
           helpSlotsByDay={JSON.parse(JSON.stringify(Object.fromEntries(helpSlotsByDay)))}
           storeName={period.store.name}
+          shiftRequests={shiftRequestsForHide.map((r) => ({
+            castId: r.castId,
+            endTime: r.endTime,
+            date: r.date.toISOString(),
+          }))}
         />
       </main>
     </div>

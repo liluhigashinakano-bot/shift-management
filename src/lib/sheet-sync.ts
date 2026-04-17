@@ -6,17 +6,17 @@ import { TIME_SLOTS, formatTimeSlot } from "./shift-utils";
 // Row 2: 日付番号（B2, H2, N2, T2, Z2, AF2, AL2, AR2）
 // Row 4: 曜日
 // Row 6: ヘッダー（時間, 出勤, 退勤, 人数, メモ）
-// Rows 7-25: 19:00〜28:00 のスロット（19行）
-// Row 26: 日別予算/総時間/社員
-// Row 27: 企画名
-// Row 28: 来店予定
-// Row 29: 備考
-// Row 32〜: 後半の日付（同構造）
+// Rows 7〜: 19:00〜29:00 のスロット（TIME_SLOTS 行数）
+// 集計行は最終スロットの次の行
+// 2段目ブロックは 1段目より 32 行下（スロット行が増えた分を反映）
 
 // 各日の開始列（0-indexed）: 1, 7, 13, 19, 25, 31, 37, 43（8日分）
 const DAY_COL_OFFSETS = [1, 7, 13, 19, 25, 31, 37, 43];
-const DATA_ROW_START = 7; // Row 7 (0-indexed: 6)
-const DATA_ROW_END = 25;  // Row 25
+const DATA_ROW_START = 7; // Excel 行番号（1-based）: 最初のスロット行
+/** 集計行（Excel 1-based）= 最終スロットの次 */
+const summaryRow1Based = (rowOffset: number) => DATA_ROW_START + TIME_SLOTS.length + rowOffset;
+/** 集計行（readSheet の 0-indexed 行） */
+const summaryRow0Indexed = (rowOffset: number) => DATA_ROW_START - 1 + TIME_SLOTS.length + rowOffset;
 
 // DB → Google Sheets 同期
 export async function syncToSheets(periodId: string): Promise<{ success: boolean; message: string }> {
@@ -42,6 +42,14 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
 
   if (!period) return { success: false, message: "シフト期間が見つかりません" };
 
+  const wishEnd29 = await prisma.shiftRequest.findMany({
+    where: { periodId, endTime: 29 },
+    select: { castId: true, date: true },
+  });
+  const hideEndNameSet = new Set(
+    wishEnd29.map((r) => `${r.castId}|${new Date(r.date).toISOString().slice(0, 10)}`),
+  );
+
   // シート名を生成（例: 東中野4月後半2026）
   const halfLabel = period.half === "first" ? "前半" : "後半";
   const sheetName =
@@ -54,7 +62,7 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
 
     for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
       const week = weeks[weekIdx];
-      const rowOffset = weekIdx === 0 ? 0 : 30; // 2段目は30行下
+      const rowOffset = weekIdx === 0 ? 0 : 32; // 2段目（スロット行増に合わせてオフセット）
 
       for (let dayIdx = 0; dayIdx < week.length; dayIdx++) {
         const day = week[dayIdx];
@@ -66,15 +74,17 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
           const slot = TIME_SLOTS[slotIdx];
           const row = DATA_ROW_START + slotIdx + rowOffset;
           const slotsAtTime = day.shiftSlots.filter((s) => s.timeSlot === slot);
+          const dateKey = new Date(day.date).toISOString().slice(0, 10);
 
           // 出勤キャスト名
           const startCasts = slotsAtTime
             .filter((s) => s.isStart)
             .map((s) => s.cast.name)
             .join("\n");
-          // 退勤キャスト名
+          // 退勤キャスト名（希望退勤29:00のときは名前を出さない）
           const endCasts = slotsAtTime
             .filter((s) => s.isEnd)
+            .filter((s) => !hideEndNameSet.has(`${s.castId}|${dateKey}`))
             .map((s) => s.cast.name)
             .join("\n");
           // 人数
@@ -90,7 +100,7 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
         }
 
         // 集計行
-        const summaryRow = DATA_ROW_END + 1 + rowOffset; // Row 26
+        const summaryRow = summaryRow1Based(rowOffset);
         const totalHours = day.shiftSlots.length * 0.5;
         const budget = day.targetBudget;
 
@@ -153,7 +163,7 @@ export async function syncFromSheets(periodId: string): Promise<{ success: boole
 
     for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
       const week = weeks[weekIdx];
-      const rowOffset = weekIdx === 0 ? 0 : 30;
+      const rowOffset = weekIdx === 0 ? 0 : 32;
 
       for (let dayIdx = 0; dayIdx < week.length; dayIdx++) {
         const day = week[dayIdx];
@@ -209,7 +219,7 @@ export async function syncFromSheets(periodId: string): Promise<{ success: boole
         }
 
         // 集計情報を読み取り
-        const summaryRow = DATA_ROW_END + rowOffset; // 0-indexed
+        const summaryRow = summaryRow0Indexed(rowOffset);
         if (data[summaryRow]) {
           const budget = data[summaryRow][colOffset - 1];
           const employee = data[summaryRow][colOffset + 2];

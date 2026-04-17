@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { signOut } from "next-auth/react";
 
 type Props = {
   user: {
@@ -13,25 +14,26 @@ type Props = {
 };
 
 const navItems = [
-  { href: "/dashboard", label: "ダッシュボード" },
-  { href: "/mypage", label: "マイページ", castOnly: true },
-  { href: "/casts", label: "キャスト管理" },
+  { href: "/dashboard", label: "ダッシュボード", staffOnly: true },
+  { href: "/casts", label: "キャスト管理", staffOnly: true },
   { href: "/stores", label: "店舗管理", adminOnly: true },
 ];
 
 export function NavHeader({ user }: Props) {
   const pathname = usePathname();
+  const homeHref = user.role === "cast" ? "/" : "/dashboard";
 
   return (
     <header className="bg-gradient-to-r from-pink-100 via-purple-50 to-sky-100 border-b border-pink-200/50 shadow-sm">
       <div className="max-w-[1800px] mx-auto px-4 flex items-center h-14 gap-6">
-        <Link href="/dashboard" className="font-bold text-lg bg-gradient-to-r from-pink-500 via-purple-500 to-sky-500 bg-clip-text text-transparent">
+        <Link href={homeHref} className="font-bold text-lg bg-gradient-to-r from-pink-500 via-purple-500 to-sky-500 bg-clip-text text-transparent">
           シフト管理
         </Link>
         <nav className="flex gap-1">
           {navItems
             .filter((item) => {
               if (item.adminOnly && user.role !== "admin") return false;
+              if ((item as any).staffOnly && (user.role === "cast")) return false;
               if ((item as any).castOnly && user.role !== "cast") return false;
               return true;
             })
@@ -62,14 +64,13 @@ export function NavHeader({ user }: Props) {
                 ? "社員"
                 : "キャスト"}
           </span>
-          <form action="/api/auth/signout" method="POST">
-            <button
-              type="submit"
-              className="text-gray-400 hover:text-gray-600 text-xs"
-            >
-              ログアウト
-            </button>
-          </form>
+          <button
+            type="button"
+            className="text-gray-400 hover:text-gray-600 text-xs"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          >
+            ログアウト
+          </button>
         </div>
       </div>
     </header>

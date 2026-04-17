@@ -1,10 +1,13 @@
-import path from "path";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { hashSync } from "bcryptjs";
 
-const dbPath = path.resolve(__dirname, "..", "dev.db");
-const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL を設定してください");
+}
+
+const adapter = new PrismaPg({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -67,9 +70,11 @@ async function main() {
     const email = `${cast.name}@cast.local`;
     await prisma.user.upsert({
       where: { email },
-      update: {},
+      update: { castLoginId: cast.name },
       create: {
-        name: cast.name, email,
+        name: cast.name,
+        email,
+        castLoginId: cast.name,
         passwordHash: hashSync("cast123", 10),
         role: "cast",
         storeId: stores[cast.store].id,

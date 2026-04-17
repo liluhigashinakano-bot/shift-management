@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import {
+  TIME_SLOTS,
+  formatTimeSlot,
+  getJapaneseDayOfWeek,
+  hideEndCastNameForWishEnd29,
+} from "@/lib/shift-utils";
 import { CastAddDialog } from "./cast-add-dialog";
 import { CastEditModal } from "./cast-edit-modal";
 import { DayInfoEditor } from "./day-info-editor";
@@ -141,7 +146,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
     const startSlot = castSlots.find((s) => s.isStart);
     const memo = startSlot?.memo || null;
     const d = new Date(day.date);
-    const dayLabel = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
+    const dayLabel = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
     setEditTarget({ dayId: day.id, dayLabel, castId, castName, currentStart, currentEnd, memo });
   };
 
@@ -211,31 +216,57 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   };
 
   const days = data.shiftDays;
-  const mid = Math.min(8, days.length); // 前半8日、後半は残り
+  const DAYS_PER_TABLE = 8;
+  const TIME_COL_WIDTH = 38; // 左の時刻列（px）
+  const DAY_COL_WIDTH = 46 + 46 + 14 + 38; // 出勤/退勤/人数/メモ（px）
+  const TABLE_MIN_WIDTH = TIME_COL_WIDTH + DAYS_PER_TABLE * DAY_COL_WIDTH; // 全体幅を揃える（px）
+
+  const mid = Math.min(DAYS_PER_TABLE, days.length); // 前半8日、後半は残り
   const weeks = [days.slice(0, mid), days.slice(mid)];
+
+  const padWeek = (week: ShiftDay[]): (ShiftDay | null)[] => {
+    const diff = DAYS_PER_TABLE - week.length;
+    if (diff <= 0) return week;
+    return [...week, ...new Array(diff).fill(null)];
+  };
 
   return (
     <div className="space-y-8">
-      {weeks.map((week, weekIdx) => (
+      {weeks.map((week, weekIdx) => {
+        const weekDays = padWeek(week);
+        return (
         <div key={weekIdx}>
           {/* 営業情報ボタン行（テーブルの外） */}
-          <div className="flex no-print" style={{ paddingLeft: "38px" }}>
-            {week.map((day, idx) => (
-              <div key={day.id} className="flex-1 text-right px-0.5">
-                <button
-                  className="text-[7px] text-blue-500 hover:text-blue-700"
-                  onClick={() => setEditDay(day)}
-                >
-                  営業情報
-                </button>
+          <div
+            className="flex no-print"
+            style={{ paddingLeft: `${TIME_COL_WIDTH}px`, minWidth: `${TABLE_MIN_WIDTH}px` }}
+          >
+            {weekDays.map((day, idx) => (
+              <div
+                key={day ? day.id : `empty-${idx}`}
+                className="flex-1 text-right px-0.5"
+              >
+                {day ? (
+                  <button
+                    className="text-[7px] text-blue-500 hover:text-blue-700"
+                    onClick={() => setEditDay(day)}
+                  >
+                    営業情報
+                  </button>
+                ) : (
+                  <div className="h-4" />
+                )}
               </div>
             ))}
           </div>
-          <div className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
+          <div
+            className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm"
+            style={{ minWidth: `${TABLE_MIN_WIDTH}px` }}
+          >
           <table className="border-collapse text-xs w-full" style={{ tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "38px" }} />{/* 時間 */}
-              {week.map((_, i) => (
+              {weekDays.map((_, i) => (
                 <React.Fragment key={i}>
                   <col style={{ width: "46px" }} />{/* 出勤 */}
                   <col style={{ width: "46px" }} />{/* 退勤 */}
@@ -249,10 +280,21 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               <tr>
                 <th className="border-r-2 border-b border-purple-300 px-1 py-0.5 w-14 sticky left-0 bg-gradient-to-b from-purple-600 to-pink-500 text-white z-20 text-[11px]">
                 </th>
-                {week.map((day, idx) => {
+                {weekDays.map((day, idx) => {
+                  const isLast = idx === DAYS_PER_TABLE - 1;
+                  if (!day) {
+                    return (
+                      <th
+                        key={`empty-${idx}`}
+                        colSpan={4}
+                        className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] relative bg-white ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      />
+                    );
+                  }
+
                   const d = new Date(day.date);
-                  const bg = dayHeaderBg(day.dayOfWeek);
-                  const isLast = idx === week.length - 1;
+                  const dow = getJapaneseDayOfWeek(d);
+                  const bg = dayHeaderBg(dow);
                   return (
                     <th
                       key={day.id}
@@ -260,11 +302,11 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                       className={`border-b border-gray-400 px-0.5 py-0.5 text-center font-bold text-[11px] relative ${bg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                     >
                       <span>{d.getDate()}</span>
-                      <span className="ml-1 text-[10px] font-normal">({day.dayOfWeek})</span>
+                      <span className="ml-1 text-[10px] font-normal">({dow})</span>
                       <button
                         className="absolute right-0 top-0 text-[7px] text-pink-500 hover:text-pink-700 font-bold px-0.5 no-print"
                         onClick={() => {
-                          const label = `${d.getMonth() + 1}/${d.getDate()}(${day.dayOfWeek})`;
+                          const label = `${d.getMonth() + 1}/${d.getDate()}(${dow})`;
                           setAddDialog({ dayId: day.id, dayLabel: label });
                         }}
                       >
@@ -277,14 +319,15 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               {/* サブヘッダー */}
               <tr className="bg-gray-100">
                 <th className="border-r-2 border-b border-gray-300 px-0.5 py-0.5 sticky left-0 bg-gray-100 z-20 text-[9px] text-gray-500" style={{ width: "42px" }}>時間</th>
-                {week.map((day, dayIdx) => {
-                  const isLast = dayIdx === week.length - 1;
+                {weekDays.map((day, dayIdx) => {
+                  const isLast = dayIdx === DAYS_PER_TABLE - 1;
                   return (
-                    <React.Fragment key={day.id}>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">出勤</th>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">退勤</th>
-                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">人</th>
-                      <th className={`border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>メモ</th>
+                    <React.Fragment key={day ? day.id : `empty-${dayIdx}`}>
+                      {/* 空列の場合も枠だけ維持する */}
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">{day ? "出勤" : ""}</th>
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">{day ? "退勤" : ""}</th>
+                      <th className="border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500">{day ? "人" : ""}</th>
+                      <th className={`border-b border-gray-300 px-0.5 py-0.5 text-center text-[8px] text-gray-500 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>{day ? "メモ" : ""}</th>
                     </React.Fragment>
                   );
                 })}
@@ -300,13 +343,37 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                     <td style={{ height: "28px" }} className={`border-r-[3px] border-gray-500 ${hourBorder} px-0.5 py-0 font-mono sticky left-0 z-10 text-[10px] ${isHourBoundary ? "text-center font-bold text-gray-700 bg-gray-100" : "text-right text-gray-400 bg-gray-50"}`}>
                       {isHourBoundary ? `${Math.floor(slot)}:00` : `:30`}
                     </td>
-                    {week.map((day, dayIdx) => {
+                    {weekDays.map((day, dayIdx) => {
+                      const isLast = dayIdx === DAYS_PER_TABLE - 1;
+                      if (!day) {
+                        return (
+                          <React.Fragment key={`empty-${dayIdx}`}>
+                            <td
+                              style={{ boxShadow: "inset 1px 0 0 #9ca3af" }}
+                              className={`${hourBorder} px-0 py-0 text-[10px]`}
+                            />
+                            <td
+                              style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}
+                              className={`${hourBorder} px-0 py-0 text-[10px]`}
+                            />
+                            <td
+                              style={{ boxShadow: "inset 1px 0 0 #d1d5db", height: "28px", maxHeight: "28px", ...countStyle(0) }}
+                              className={`${hourBorder} px-0 py-0 text-center font-bold text-[9px]`}
+                            />
+                            <td
+                              style={{ boxShadow: `inset 1px 0 0 #d1d5db${!isLast ? ", inset -3px 0 0 #6b7280" : ""}`, height: "28px", maxHeight: "28px", overflow: "hidden" }}
+                              className={`${hourBorder} px-0 py-0`}
+                            />
+                          </React.Fragment>
+                        );
+                      }
+
                       const daySlots = day.shiftSlots.filter((s) => s.timeSlot === slot);
                       const startCasts = daySlots.filter((s) => s.isStart);
                       const endCasts = daySlots.filter((s) => s.isEnd);
                       const count = daySlots.length;
                       const memos = daySlots.filter((s) => s.memo).map((s) => s.memo);
-                      const isLast = dayIdx === week.length - 1;
+
                       const hasWorking = count > 0;
 
                       // ドロップ判定用: ドラッグ中の同じ日かどうか
@@ -365,7 +432,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                                         memo: s.memo!,
                                         castId: s.castId,
                                         dayId: day.id,
-                                        dayLabel: `${dd.getMonth() + 1}/${dd.getDate()}(${day.dayOfWeek})`,
+                                        dayLabel: `${dd.getMonth() + 1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`,
                                         currentStart: origStart,
                                         currentEnd: origEnd,
                                       });
@@ -403,6 +470,9 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                               const req = data.shiftRequests?.find(
                                 (r) => r.castId === s.castId && r.dayId === day.id
                               );
+                              if (req && hideEndCastNameForWishEnd29(req.endTime)) {
+                                return null;
+                              }
                               const isEndAdjusted = req && req.endTime !== origEnd;
                               const endColor: React.CSSProperties = isEndAdjusted
                                 ? { backgroundColor: "#6b7280", color: "#ffffff" }
@@ -444,10 +514,20 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                 <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[7px] sticky left-0 bg-emerald-50 z-10 whitespace-nowrap">
                   <span className="text-emerald-800 font-bold">予算</span><span className="text-sky-700 font-bold">/時間</span>
                 </td>
-                {week.map((day, dayIdx) => {
+                {weekDays.map((day, dayIdx) => {
+                  const isLast = dayIdx === DAYS_PER_TABLE - 1;
+                  if (!day) {
+                    return (
+                      <React.Fragment key={`empty-${dayIdx}`}>
+                        <td className="px-0.5 py-0.5 text-[9px] font-bold text-emerald-800 whitespace-nowrap" />
+                        <td colSpan={2} className="px-0.5 py-0.5 text-[9px] font-bold text-sky-700 whitespace-nowrap" />
+                        <td className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`} />
+                      </React.Fragment>
+                    );
+                  }
+
                   const budget = day.targetBudget;
                   const totalHours = day.shiftSlots.length * 0.5;
-                  const isLast = dayIdx === week.length - 1;
                   return (
                     <React.Fragment key={day.id}>
                       <td className="px-0.5 py-0.5 text-[9px] font-bold text-emerald-800 whitespace-nowrap cursor-pointer hover:bg-emerald-100" onClick={() => setEditDay(day)}>
@@ -459,7 +539,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                       <td className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap cursor-pointer hover:bg-purple-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                         onClick={() => {
                           const dd = new Date(day.date);
-                          setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "eventName", label: "企画名", value: day.eventName || "" });
+                          setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "eventName", label: "企画名", value: day.eventName || "" });
                         }}
                       >
                         {day.eventName || "-"}
@@ -471,13 +551,18 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               {/* 社員 */}
               <tr className="bg-orange-50">
                 <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] font-bold sticky left-0 bg-orange-50 z-10 text-orange-800 whitespace-nowrap">社員</td>
-                {week.map((day, dayIdx) => {
-                  const isLast = dayIdx === week.length - 1;
+                {weekDays.map((day, dayIdx) => {
+                  const isLast = dayIdx === DAYS_PER_TABLE - 1;
+                  if (!day) {
+                    return (
+                      <td key={`empty-${dayIdx}`} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`} />
+                    );
+                  }
                   return (
                     <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap cursor-pointer hover:bg-orange-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
                         const dd = new Date(day.date);
-                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "employeeOnDuty", label: "社員", value: day.employeeOnDuty || "" });
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "employeeOnDuty", label: "社員", value: day.employeeOnDuty || "" });
                       }}
                     >
                       {day.employeeOnDuty || "-"}
@@ -488,13 +573,18 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               {/* 来店予定 */}
               <tr>
                 <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] sticky left-0 bg-white z-10 text-gray-600 whitespace-nowrap">来店予定</td>
-                {week.map((day, dayIdx) => {
-                  const isLast = dayIdx === week.length - 1;
+                {weekDays.map((day, dayIdx) => {
+                  const isLast = dayIdx === DAYS_PER_TABLE - 1;
+                  if (!day) {
+                    return (
+                      <td key={`empty-${dayIdx}`} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`} />
+                    );
+                  }
                   return (
                     <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
                         const dd = new Date(day.date);
-                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "expectedVisitors", label: "来店予定", value: day.expectedVisitors || "" });
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "expectedVisitors", label: "来店予定", value: day.expectedVisitors || "" });
                       }}
                     >
                       {day.expectedVisitors || "-"}
@@ -504,15 +594,20 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
               </tr>
               <tr>
                 <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[8px] sticky left-0 bg-white z-10 text-gray-600 whitespace-nowrap">備考</td>
-                {week.map((day, dayIdx) => {
-                  const isLast = dayIdx === week.length - 1;
+                {weekDays.map((day, dayIdx) => {
+                  const isLast = dayIdx === DAYS_PER_TABLE - 1;
+                  if (!day) {
+                    return (
+                      <td key={`empty-${dayIdx}`} colSpan={4} className={`px-1 py-0.5 text-[9px] text-gray-600 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`} />
+                    );
+                  }
                   return (
                     <td key={day.id} colSpan={4} className={`px-1 py-0.5 text-[9px] text-gray-600 cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
                         const dd = new Date(day.date);
                         let notesVal = "";
                         if (day.notes) { try { notesVal = JSON.parse(day.notes).text || ""; } catch { notesVal = day.notes; } }
-                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${day.dayOfWeek})`, field: "notes", label: "備考", value: notesVal });
+                        setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "notes", label: "備考", value: notesVal });
                       }}
                     >
                       {(() => {
@@ -548,7 +643,8 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
           </table>
           </div>
         </div>
-      ))}
+      );
+      })}
 
       {addDialog && (
         <CastAddDialog

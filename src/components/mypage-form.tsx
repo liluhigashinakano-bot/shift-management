@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/modal";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
 
 type Period = {
   id: string;
@@ -217,10 +217,11 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
                 <option value="">日付を選択</option>
                 {currentPeriod?.shiftDays.map((d) => {
                   const dt = new Date(d.date);
-                  const isWeekend = d.dayOfWeek === "土" || d.dayOfWeek === "日";
+                  const dow = getJapaneseDayOfWeek(dt);
+                  const isWeekend = dow === "土" || dow === "日";
                   return (
                     <option key={d.id} value={d.date}>
-                      {dt.getMonth() + 1}/{dt.getDate()}({d.dayOfWeek}){isWeekend ? " ★" : ""}
+                      {dt.getMonth() + 1}/{dt.getDate()}({dow}){isWeekend ? " ★" : ""}
                     </option>
                   );
                 })}

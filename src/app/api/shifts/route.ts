@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
+
+function getRole(session: any) {
+  return (session?.user as any)?.role as string | undefined;
+}
 
 // GET: シフト期間のデータを取得
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = getRole(session);
+  if (role === "cast") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const periodId = req.nextUrl.searchParams.get("periodId");
   if (!periodId) {
     return NextResponse.json({ error: "periodId is required" }, { status: 400 });
@@ -117,6 +127,11 @@ export async function GET(req: NextRequest) {
 
 // POST: スロット操作
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = getRole(session);
+  if (role !== "admin" && role !== "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const body = await req.json();
   const { action, dayId, castId } = body;
 

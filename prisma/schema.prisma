@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Store {
@@ -20,6 +20,8 @@ model User {
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
+  /// ログイン用キャストID（キャストのみ。メール local と独立して設定可）
+  castLoginId  String?  @unique
   passwordHash String
   role         String   @default("cast") // admin, employee, cast
   hourlyRate   Int?     // 時給（キャスト用）

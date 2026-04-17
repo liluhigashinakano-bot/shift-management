@@ -1,11 +1,16 @@
-// 時間スロット: 19:00〜28:00（翌4:00）、30分刻み
-export const TIME_SLOTS = Array.from({ length: 19 }, (_, i) => 19 + i * 0.5);
+// 時間スロット: 19:00〜29:00（翌5:00）、30分刻み
+export const TIME_SLOTS = Array.from({ length: 21 }, (_, i) => 19 + i * 0.5);
 
 // 時間スロットを表示用文字列に変換
 export function formatTimeSlot(slot: number): string {
   const hour = Math.floor(slot);
   const min = slot % 1 === 0.5 ? "30" : "00";
   return `${hour}:${min}`;
+}
+
+/** シフト希望の退勤が 29:00 のとき、シフト表の退勤列にキャスト名を出さない */
+export function hideEndCastNameForWishEnd29(endTime: number): boolean {
+  return endTime === 29;
 }
 
 // 日付を "M/D" 形式に
@@ -29,4 +34,10 @@ export function calcDailyHours(
 ): number {
   const castSlots = slots.filter((s) => s.castId === castId);
   return castSlots.length * 0.5;
+}
+
+// 日付から曜日（日本語）を計算する（DBの `dayOfWeek` と表示のズレ対策）
+export function getJapaneseDayOfWeek(date: Date): string {
+  const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+  return dayNames[date.getDay()] ?? "";
 }

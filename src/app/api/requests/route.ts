@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
+
+function getRole(session: any) {
+  return (session?.user as any)?.role as string | undefined;
+}
 
 // シフト希望をシフト表に即時反映するヘルパー
 async function applyToShiftTable(castId: string, periodId: string, date: Date, startTime: number, endTime: number, notes?: string | null) {
@@ -39,8 +44,13 @@ async function applyToShiftTable(castId: string, periodId: string, date: Date, s
 
 // GET: シフト希望一覧
 export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const periodId = req.nextUrl.searchParams.get("periodId");
-  const castId = req.nextUrl.searchParams.get("castId");
+  const castIdParam = req.nextUrl.searchParams.get("castId");
+  const role = getRole(session);
+  const castId = role === "cast" ? session.user.id : castIdParam;
 
   const where: Record<string, unknown> = {};
   if (periodId) where.periodId = periodId;
@@ -60,12 +70,19 @@ export async function GET(req: NextRequest) {
 
 // POST: シフト希望を作成/更新
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = getRole(session);
+
   const body = await req.json();
   const { action } = body;
 
   // 単一登録 → 即時シフト表反映
   if (action === "create") {
     const { castId, periodId, date, startTime, endTime, notes } = body;
+    if (role === "cast" && castId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const request = await prisma.shiftRequest.create({
       data: {
         castId,
@@ -88,13 +105,27 @@ export async function POST(req: NextRequest) {
       periodId: string;
       entries: { date: string; startTime: number; endTime: number; notes?: string }[];
     };
+    if (role === "cast" && castId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-    // 既存の希望を削除
-    await prisma.shiftRequest.deleteMany({
-      where: { castId, periodId },
-    });
+    // 同じ日が複数回あれば最後の内容を採用
+    const byCalendarDay = new Map<string, (typeof entries)[0]>();
+    for (const e of entries) {
+      const key = new Date(e.date).toISOString().slice(0, 10);
+      byCalendarDay.set(key, e);
+    }
+    const merged = [...byCalendarDay.values()];
+    const datesToReplace = merged.map((e) => new Date(e.date));
 
-    const data = entries.map((e) => ({
+    // 今回チェックした日付の希望だけ置き換え（他の日は残す。全削除すると追加分だけになって上書きに見える）
+    if (datesToReplace.length > 0) {
+      await prisma.shiftRequest.deleteMany({
+        where: { castId, periodId, date: { in: datesToReplace } },
+      });
+    }
+
+    const data = merged.map((e) => ({
       castId,
       periodId,
       date: new Date(e.date),
@@ -106,8 +137,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.shiftRequest.createMany({ data });
 
-    // 全エントリをシフト表に即時反映
-    for (const entry of entries) {
+    for (const entry of merged) {
       await applyToShiftTable(castId, periodId, new Date(entry.date), entry.startTime, entry.endTime, entry.notes);
     }
 
@@ -115,6 +145,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "updateStatus") {
+    // ステータス更新は管理者/社員のみ
+    if (role === "cast") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const { id, status } = body;
     await prisma.shiftRequest.update({
       where: { id },
@@ -125,6 +157,12 @@ export async function POST(req: NextRequest) {
 
   if (action === "delete") {
     const { id } = body;
+    if (role === "cast") {
+      const reqRow = await prisma.shiftRequest.findUnique({ where: { id }, select: { castId: true } });
+      if (!reqRow || reqRow.castId !== session.user.id) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
     await prisma.shiftRequest.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   }

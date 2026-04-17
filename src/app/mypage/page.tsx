@@ -7,6 +7,7 @@ import { MypageForm } from "@/components/mypage-form";
 export default async function MypagePage() {
   const session = await auth();
   if (!session) redirect("/login");
+  const role = (session.user as any).role as string | undefined;
 
   const userId = session.user.id;
   const user = await prisma.user.findUnique({
@@ -15,6 +16,45 @@ export default async function MypagePage() {
   });
 
   if (!user) redirect("/login");
+
+  // キャストは「希望一覧（/requests）」へ統一して編集箇所を1つにする
+  if (role === "cast") {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const half = now.getDate() <= 15 ? "first" : "second";
+    const period = await prisma.shiftPeriod.findFirst({
+      where: { storeId: user.storeId ?? undefined, year, month, half },
+      select: { id: true, storeId: true },
+    });
+    if (period?.storeId) redirect(`/requests/${period.storeId}/${period.id}`);
+
+    // 今期が未登録なら、同店舗で最新の期間へ（新規店舗・未作成でもログインへ戻さない）
+    const latest = await prisma.shiftPeriod.findFirst({
+      where: { storeId: user.storeId ?? undefined },
+      orderBy: [{ year: "desc" }, { month: "desc" }, { half: "desc" }],
+      select: { id: true, storeId: true },
+    });
+    if (latest?.storeId) redirect(`/requests/${latest.storeId}/${latest.id}`);
+
+    return (
+      <div className="min-h-screen">
+        <NavHeader
+          user={{
+            name: session.user.name,
+            role: (session.user as any).role,
+            storeName: (session.user as any).storeName,
+          }}
+        />
+        <main className="max-w-[600px] mx-auto px-4 py-8">
+          <h1 className="text-xl font-bold mb-2">マイページ</h1>
+          <p className="text-sm text-gray-600">
+            シフト期間がまだ登録されていません。管理者が期間を作成すると、ここから希望シフトに進めます。
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   // ユーザーが所属する店舗のシフト期間を取得
   const now = new Date();
