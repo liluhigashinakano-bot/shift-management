@@ -18,7 +18,12 @@ function resolveAuthSecret(): string {
   ) {
     return "build-time-auth-secret-placeholder-not-used-at-runtime";
   }
-  throw new Error("AUTH_SECRET または NEXTAUTH_SECRET を設定してください");
+  // 本番ランタイムで未設定のときはサーバー起動を止めない（ヘルスチェック失敗のループを避ける）
+  // 必ず Railway の Variables に AUTH_SECRET（と NEXTAUTH_SECRET）を設定すること
+  console.error(
+    "[auth] AUTH_SECRET / NEXTAUTH_SECRET が未設定です。Railway の Variables に設定してください。",
+  );
+  return "runtime-missing-auth-secret-please-set-railway-variables";
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
