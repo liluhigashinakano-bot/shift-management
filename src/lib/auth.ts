@@ -11,6 +11,13 @@ function resolveAuthSecret(): string {
   if (process.env.NODE_ENV !== "production") {
     return "shift-management-dev-secret-not-for-production";
   }
+  // next build では NODE_ENV=production だが Variables はまだ無いことがある（Docker/Railway）
+  if (
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.npm_lifecycle_event === "build"
+  ) {
+    return "build-time-auth-secret-placeholder-not-used-at-runtime";
+  }
   throw new Error("AUTH_SECRET または NEXTAUTH_SECRET を設定してください");
 }
 
