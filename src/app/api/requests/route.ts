@@ -8,6 +8,21 @@ function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
 }
 
+/** 指定日のそのキャスト分シフトスロットだけ削除（希望削除・更新前に使用） */
+async function removeCastSlotsForDay(castId: string, periodId: string, date: Date) {
+  const period = await prisma.shiftPeriod.findUnique({
+    where: { id: periodId },
+    include: { shiftDays: true },
+  });
+  if (!period) return;
+  const reqDate = new Date(date);
+  const day = period.shiftDays.find((d) => new Date(d.date).toDateString() === reqDate.toDateString());
+  if (!day) return;
+  await prisma.shiftSlot.deleteMany({
+    where: { dayId: day.id, castId },
+  });
+}
+
 // シフト希望をシフト表に即時反映するヘルパー
 async function applyToShiftTable(castId: string, periodId: string, date: Date, startTime: number, endTime: number, notes?: string | null) {
   const period = await prisma.shiftPeriod.findUnique({
@@ -155,6 +170,58 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, count: data.length });
   }
 
+  /** 1件の希望を書き換え（日付・時間・備考）＋シフト表を差し替え */
+  if (action === "update") {
+    const { id, date, startTime, endTime, notes } = body as {
+      id: string;
+      date: string;
+      startTime: number;
+      endTime: number;
+      notes?: string | null;
+    };
+    const existing = await prisma.shiftRequest.findUnique({
+      where: { id },
+      select: { castId: true, periodId: true, date: true },
+    });
+    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (role === "cast" && existing.castId !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const lockedUp = await assertShiftRequestsUnlocked(existing.periodId);
+    if (lockedUp) return lockedUp;
+    const slotLockedUp = await assertShiftSlotsUnlocked(existing.periodId);
+    if (slotLockedUp) return slotLockedUp;
+
+    const oldDate = existing.date;
+    const newDate = new Date(date);
+    const oldStr = new Date(oldDate).toDateString();
+    const newStr = newDate.toDateString();
+
+    if (oldStr !== newStr) {
+      await removeCastSlotsForDay(existing.castId, existing.periodId, oldDate);
+    }
+
+    await prisma.shiftRequest.update({
+      where: { id },
+      data: {
+        date: newDate,
+        startTime,
+        endTime,
+        notes: notes ?? null,
+        status: "approved",
+      },
+    });
+    await applyToShiftTable(
+      existing.castId,
+      existing.periodId,
+      newDate,
+      startTime,
+      endTime,
+      notes ?? null,
+    );
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "updateStatus") {
     // ステータス更新は管理者/社員のみ
     if (role === "cast") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -177,7 +244,7 @@ export async function POST(req: NextRequest) {
     const { id } = body;
     const existing = await prisma.shiftRequest.findUnique({
       where: { id },
-      select: { castId: true, periodId: true },
+      select: { castId: true, periodId: true, date: true },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (role === "cast" && existing.castId !== session.user.id) {
@@ -185,6 +252,7 @@ export async function POST(req: NextRequest) {
     }
     const lockedDel = await assertShiftRequestsUnlocked(existing.periodId);
     if (lockedDel) return lockedDel;
+    await removeCastSlotsForDay(existing.castId, existing.periodId, existing.date);
     await prisma.shiftRequest.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   }

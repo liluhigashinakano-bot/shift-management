@@ -66,6 +66,7 @@ export default async function RequestsPage({
 
       return my.map((r) => ({
         ...r,
+        notesRaw: r.notes ?? null,
         notes:
           r.periodId === periodId
             ? r.notes
@@ -108,9 +109,10 @@ export default async function RequestsPage({
     });
 
     return [
-      ...requests,
+      ...requests.map((r) => ({ ...r, notesRaw: r.notes ?? null })),
       ...otherRequests.map((r) => ({
         ...r,
+        notesRaw: r.notes ?? null,
         notes: r.notes ? `[${r.period.store.name}] ${r.notes}` : `[${r.period.store.name}ヘルプ]`,
       })),
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());

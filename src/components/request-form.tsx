@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/modal";
 import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
 
@@ -19,12 +19,13 @@ type Request = {
   endTime: number;
   status: string;
   notes: string | null;
+  /** 表の `notes` が表示用に加工されているとき、フォーム編集はこちらを使う */
+  notesRaw?: string | null;
   cast: { id: string; name: string; store: { name: string } | null };
 };
 
 type Props = {
   periodId: string;
-  /** periodId → 締切済みか */
   periodLocks: Record<string, boolean>;
   days: Day[];
   initialRequests: Request[];
@@ -32,6 +33,17 @@ type Props = {
   userRole: string;
   userId: string;
 };
+
+function sameCalendarDay(a: string, b: string) {
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
+
+function findDayDateKeyForRequest(rDate: string, dayList: Day[]): string | null {
+  for (const d of dayList) {
+    if (sameCalendarDay(d.date, rDate)) return d.date;
+  }
+  return null;
+}
 
 export function RequestForm({
   periodId,
@@ -42,18 +54,20 @@ export function RequestForm({
   userRole,
   userId,
 }: Props) {
+  const router = useRouter();
   const [requests, setRequests] = useState(initialRequests);
   const [addModal, setAddModal] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<Request | null>(null);
   const [selectedCast, setSelectedCast] = useState("");
-  const [entries, setEntries] = useState<
-    Record<string, { checked: boolean; start: string; end: string; notes: string }>
-  >(() => {
+  const defaultEntries = useMemo(() => {
     const init: Record<string, { checked: boolean; start: string; end: string; notes: string }> = {};
     days.forEach((d) => {
       init[d.date] = { checked: false, start: "20", end: "25", notes: "" };
     });
     return init;
-  });
+  }, [days]);
+
+  const [entries, setEntries] = useState(defaultEntries);
   const [saving, setSaving] = useState(false);
 
   const isAdmin = userRole === "admin" || userRole === "employee";
@@ -61,13 +75,76 @@ export function RequestForm({
   const lockedFor = (pid: string) => periodLocks[pid] ?? false;
   const currentLocked = lockedFor(periodId);
 
-  const reload = async () => {
-    const res = await fetch(`/api/requests?periodId=${periodId}`);
-    if (res.ok) setRequests(await res.json());
+  useEffect(() => {
+    setRequests(initialRequests);
+  }, [initialRequests]);
+
+  const reload = () => {
+    router.refresh();
   };
 
+  const closeModal = () => {
+    setAddModal(false);
+    setEditingRequest(null);
+  };
+
+  const openAddModal = () => {
+    setEditingRequest(null);
+    setSelectedCast("");
+    setEntries({ ...defaultEntries });
+    setAddModal(true);
+  };
+
+  const openEditModal = (r: Request) => {
+    if (lockedFor(r.periodId)) return;
+    if (!isAdmin && r.castId !== userId) return;
+    const key = findDayDateKeyForRequest(r.date, days);
+    if (!key) return;
+    const next = { ...defaultEntries };
+    const rawNotes = r.notesRaw ?? r.notes ?? "";
+    Object.keys(next).forEach((k) => {
+      next[k] = { ...next[k], checked: false };
+    });
+    next[key] = {
+      checked: true,
+      start: String(r.startTime),
+      end: String(r.endTime),
+      notes: rawNotes,
+    };
+    setEntries(next);
+    if (isAdmin) setSelectedCast(r.castId);
+    setEditingRequest(r);
+    setAddModal(true);
+  };
+
+  const modalLocked = editingRequest ? lockedFor(editingRequest.periodId) : currentLocked;
+
   const handleSubmit = async () => {
-    if (currentLocked) return;
+    if (modalLocked) return;
+
+    if (editingRequest) {
+      const picked = Object.entries(entries).filter(([, v]) => v.checked);
+      if (picked.length !== 1) return;
+      const [dateKey, v] = picked[0];
+      setSaving(true);
+      await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          id: editingRequest.id,
+          date: dateKey,
+          startTime: parseFloat(v.start),
+          endTime: parseFloat(v.end),
+          notes: v.notes || null,
+        }),
+      });
+      setSaving(false);
+      closeModal();
+      reload();
+      return;
+    }
+
     const castId = isAdmin ? selectedCast : userId;
     if (!castId) return;
 
@@ -95,23 +172,13 @@ export function RequestForm({
     });
 
     setSaving(false);
-    setAddModal(false);
-    // チェックをリセット
+    closeModal();
     setEntries((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((k) => { next[k] = { ...next[k], checked: false }; });
-      return next;
-    });
-    reload();
-  };
-
-  const updateStatus = async (id: string, status: string) => {
-    const row = requests.find((x) => x.id === id);
-    if (row && lockedFor(row.periodId)) return;
-    await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "updateStatus", id, status }),
+      const n = { ...prev };
+      Object.keys(n).forEach((k) => {
+        n[k] = { ...n[k], checked: false };
+      });
+      return n;
     });
     reload();
   };
@@ -125,10 +192,21 @@ export function RequestForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", id }),
     });
+    closeModal();
     reload();
   };
 
-  // キャストごとにグループ化
+  const handleModalDelete = () => {
+    if (!editingRequest) return;
+    void deleteRequest(editingRequest.id);
+  };
+
+  const canEditRow = (r: Request) => {
+    if (lockedFor(r.periodId)) return false;
+    if (isAdmin) return true;
+    return r.castId === userId;
+  };
+
   const groupedByCast = new Map<string, Request[]>();
   requests.forEach((r) => {
     const key = r.castId;
@@ -153,7 +231,7 @@ export function RequestForm({
       <div className="flex items-center gap-3">
         <Button
           className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
-          onClick={() => setAddModal(true)}
+          onClick={openAddModal}
           disabled={currentLocked}
         >
           + シフト希望を登録
@@ -163,7 +241,10 @@ export function RequestForm({
         </span>
       </div>
 
-      {/* 希望一覧テーブル（スマホは余白・文字を詰め、備考は横スクロール） */}
+      <p className="text-xs text-gray-500 sm:text-sm">
+        行をクリックすると、登録と同じ画面で希望の変更・削除ができます。
+      </p>
+
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full border-collapse text-[11px] leading-tight sm:text-sm sm:leading-normal">
           <thead>
@@ -201,8 +282,17 @@ export function RequestForm({
                 const st = statusLabel[r.status] || statusLabel.pending;
                 const cell =
                   "border border-gray-300 px-1.5 py-0.5 align-middle sm:px-3 sm:py-1.5";
+                const clickable = canEditRow(r);
                 return (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr
+                    key={r.id}
+                    className={
+                      clickable
+                        ? "cursor-pointer hover:bg-purple-50/80"
+                        : "hover:bg-gray-50"
+                    }
+                    onClick={() => clickable && openEditModal(r)}
+                  >
                     <td className={`${cell} font-medium`}>{r.cast.name}</td>
                     <td className={`${cell} text-gray-500 text-[10px] sm:text-xs`}>
                       {r.cast.store?.name || "-"}
@@ -233,7 +323,10 @@ export function RequestForm({
                               ? "text-gray-300 cursor-not-allowed"
                               : "text-red-400 hover:text-red-600"
                           }`}
-                          onClick={() => deleteRequest(r.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteRequest(r.id);
+                          }}
                         >
                           削除
                         </button>
@@ -247,10 +340,18 @@ export function RequestForm({
         </table>
       </div>
 
-      {/* 希望登録モーダル */}
       {addModal && (
-        <Modal open title="シフト希望登録" onClose={() => setAddModal(false)}>
+        <Modal
+          open
+          title={editingRequest ? "シフト希望の編集" : "シフト希望登録"}
+          onClose={closeModal}
+        >
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+            {modalLocked && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                この希望の期間は締め切りのため変更・削除できません。
+              </p>
+            )}
             {isAdmin && (
               <div className="space-y-2">
                 <Label>キャスト</Label>
@@ -258,11 +359,13 @@ export function RequestForm({
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                   value={selectedCast}
                   onChange={(e) => setSelectedCast(e.target.value)}
+                  disabled={!!editingRequest}
                 >
                   <option value="">キャストを選択</option>
                   {allCasts.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name}{c.storeName ? ` (${c.storeName})` : ""}
+                      {c.name}
+                      {c.storeName ? ` (${c.storeName})` : ""}
                     </option>
                   ))}
                 </select>
@@ -270,7 +373,12 @@ export function RequestForm({
             )}
 
             <div className="space-y-2">
-              <Label>出勤希望日を選択</Label>
+              <Label>{editingRequest ? "日付と時間" : "出勤希望日を選択"}</Label>
+              {editingRequest && (
+                <p className="text-xs text-gray-500">
+                  編集時は日付を1つだけ選べます。別の日に付け替える場合は、その日にチェックを移してください。
+                </p>
+              )}
               {days.map((day) => {
                 const d = new Date(day.date);
                 const dow = getJapaneseDayOfWeek(d);
@@ -289,20 +397,40 @@ export function RequestForm({
                       <input
                         type="checkbox"
                         checked={entry?.checked || false}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          if (editingRequest) {
+                            setEntries((prev) => {
+                              const newEnt = { ...prev };
+                              Object.keys(newEnt).forEach((k) => {
+                                newEnt[k] = { ...newEnt[k], checked: false };
+                              });
+                              if (checked) {
+                                newEnt[day.date] = {
+                                  ...prev[day.date],
+                                  checked: true,
+                                };
+                              } else {
+                                newEnt[day.date] = { ...prev[day.date], checked: false };
+                              }
+                              return newEnt;
+                            });
+                            return;
+                          }
                           setEntries((prev) => ({
                             ...prev,
-                            [day.date]: { ...prev[day.date], checked: e.target.checked },
-                          }))
-                        }
+                            [day.date]: { ...prev[day.date], checked },
+                          }));
+                        }}
                         className="accent-pink-600"
+                        disabled={modalLocked}
                       />
                       <span className={`font-medium ${isWeekend ? "text-red-500" : ""}`}>
                         {dateStr}
                       </span>
                     </label>
                     {entry?.checked && (
-                      <div className="mt-2 ml-6 flex items-center gap-2">
+                      <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
                         <select
                           className="border border-gray-300 rounded px-2 py-1 text-xs"
                           value={entry.start}
@@ -312,6 +440,7 @@ export function RequestForm({
                               [day.date]: { ...prev[day.date], start: e.target.value },
                             }))
                           }
+                          disabled={modalLocked}
                         >
                           {TIME_SLOTS.map((s) => (
                             <option key={s} value={s.toString()}>
@@ -329,6 +458,7 @@ export function RequestForm({
                               [day.date]: { ...prev[day.date], end: e.target.value },
                             }))
                           }
+                          disabled={modalLocked}
                         >
                           {TIME_SLOTS.filter((s) => s > parseFloat(entry.start)).map((s) => (
                             <option key={s} value={s.toString()}>
@@ -346,6 +476,7 @@ export function RequestForm({
                               [day.date]: { ...prev[day.date], notes: e.target.value },
                             }))
                           }
+                          disabled={modalLocked}
                         />
                       </div>
                     )}
@@ -354,17 +485,36 @@ export function RequestForm({
               })}
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
-            <Button variant="outline" onClick={() => setAddModal(false)}>
-              キャンセル
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={saving || (isAdmin && !selectedCast) || currentLocked}
-              className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
-            >
-              {saving ? "登録中..." : "希望を登録"}
-            </Button>
+          <div className="flex flex-col-reverse gap-2 mt-4 pt-3 border-t sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-2">
+              {editingRequest && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleModalDelete}
+                  disabled={saving || modalLocked}
+                >
+                  削除
+                </Button>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closeModal}>
+                キャンセル
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={
+                  saving ||
+                  (isAdmin && !editingRequest && !selectedCast) ||
+                  modalLocked
+                }
+                className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
+              >
+                {saving ? "処理中..." : editingRequest ? "変更を保存" : "希望を登録"}
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

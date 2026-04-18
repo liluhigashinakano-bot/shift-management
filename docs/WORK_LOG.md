@@ -220,3 +220,15 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-04-18（希望一覧：行クリックで編集・削除）
+
+**概要:** 希望一覧の行クリックで「シフト希望登録」と同じモーダルを開き、時間・備考の変更と削除。API に `action: "update"` を追加。希望削除時にシフト表スロットを除去。キャスト画面の表示用備考は `notesRaw` で編集に渡す。
+
+**変更ファイル（主なもの）:**
+- `src/components/request-form.tsx`
+- `src/app/api/requests/route.ts`
+- `src/app/requests/[storeId]/[periodId]/page.tsx`
+- `docs/WORK_LOG.md`
+
+---
