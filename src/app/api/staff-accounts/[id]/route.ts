@@ -8,57 +8,74 @@ function generatePassword(): string {
   return crypto.randomBytes(9).toString("base64url");
 }
 
-function displayLoginId(
-  staffLoginId: string | null,
-  email: string,
-): string | null {
-  if (staffLoginId && staffLoginId.length > 0) return staffLoginId;
-  if (email.endsWith("@staff.local")) {
-    return email.slice(0, -"@staff.local".length) || null;
+function requireAdmin(session: { user?: { role?: string } } | null) {
+  if (!session || (session.user as { role?: string }).role !== "admin") {
+    return false;
   }
-  return null;
+  return true;
 }
 
-/** 管理者・従業員・閲覧者の一覧 */
-export async function GET() {
+async function assertStaffUser(id: string) {
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, role: true },
+  });
+  if (!user || !["admin", "employee", "viewer"].includes(user.role)) {
+    return null;
+  }
+  return user;
+}
+
+/** パスワードのみ再生成 */
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
-  if (!session || (session.user as { role?: string }).role !== "admin") {
+  if (!requireAdmin(session)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const users = await prisma.user.findMany({
-    where: { role: { in: ["admin", "employee", "viewer"] } },
-    select: {
-      id: true,
-      name: true,
-      role: true,
-      email: true,
-      staffLoginId: true,
-      accessAllStores: true,
-      storeId: true,
-      assignedStores: { select: { storeId: true } },
-    },
-    orderBy: { name: "asc" },
+  const { id } = await context.params;
+  const staff = await assertStaffUser(id);
+  if (!staff) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  let body: { action?: string };
+  try {
+    body = (await req.json()) as { action?: string };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (body.action !== "resetPassword") {
+    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  }
+
+  const password = generatePassword();
+  const passwordHash = hashSync(password, 10);
+  await prisma.user.update({
+    where: { id },
+    data: { passwordHash },
   });
 
-  return NextResponse.json(
-    users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      role: u.role,
-      loginId: displayLoginId(u.staffLoginId, u.email),
-      email: u.email,
-      accessAllStores: u.accessAllStores,
-      storeId: u.storeId,
-      assignedStoreIds: u.assignedStores.map((a) => a.storeId),
-    })),
-  );
+  return NextResponse.json({ ok: true, password });
 }
 
-export async function POST(req: NextRequest) {
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
-  if (!session || (session.user as { role?: string }).role !== "admin") {
+  if (!requireAdmin(session)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  const staff = await assertStaffUser(id);
+  if (!staff) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   let body: Record<string, unknown>;
@@ -91,10 +108,13 @@ export async function POST(req: NextRequest) {
   }
 
   const email = `${loginId}@staff.local`;
-  const dupLogin = await prisma.user.findFirst({
-    where: { OR: [{ staffLoginId: loginId }, { email }] },
+  const dup = await prisma.user.findFirst({
+    where: {
+      OR: [{ staffLoginId: loginId }, { email }],
+      NOT: { id },
+    },
   });
-  if (dupLogin) {
+  if (dup) {
     return NextResponse.json(
       { error: "同じログインID（またはメール）のユーザーが既にいます" },
       { status: 409 },
@@ -118,37 +138,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const password = generatePassword();
-  const passwordHash = hashSync(password, 10);
-
   const primaryStoreId =
     effectiveAll || storeIds.length === 0 ? null : storeIds[0] ?? null;
 
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email,
-      staffLoginId: loginId,
-      passwordHash,
-      role: roleIn,
-      accessAllStores: effectiveAll,
-      storeId: primaryStoreId,
-      assignedStores:
-        !effectiveAll && storeIds.length > 0
-          ? { create: storeIds.map((storeId) => ({ storeId })) }
-          : undefined,
-    },
-  });
+  await prisma.$transaction([
+    prisma.userStoreAssignment.deleteMany({ where: { userId: id } }),
+    prisma.user.update({
+      where: { id },
+      data: {
+        name,
+        email,
+        staffLoginId: loginId,
+        role: roleIn,
+        accessAllStores: effectiveAll,
+        storeId: primaryStoreId,
+        assignedStores:
+          !effectiveAll && storeIds.length > 0
+            ? { create: storeIds.map((storeId) => ({ storeId })) }
+            : undefined,
+      },
+    }),
+  ]);
 
   return NextResponse.json({
     ok: true,
     user: {
-      id: user.id,
-      name: user.name,
+      id,
+      name,
       loginId,
-      role: user.role,
-      accessAllStores: user.accessAllStores,
+      role: roleIn,
+      accessAllStores: effectiveAll,
     },
-    password,
   });
 }

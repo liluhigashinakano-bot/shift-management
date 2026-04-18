@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
-import { PermissionAccountForm } from "@/components/permission-account-form";
+import { PermissionSettingsContent } from "@/components/permission-settings-content";
 
 export default async function PermissionsPage() {
   const session = await auth();
@@ -25,12 +25,12 @@ export default async function PermissionsPage() {
           storeName: (session.user as { storeName?: string | null }).storeName,
         }}
       />
-      <main className="max-w-[720px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
+      <main className="max-w-[960px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-2">権限設定</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          管理者・従業員・閲覧者のアカウントを作成します。閲覧者は権限設定ページにアクセスできません。
+          管理者・従業員・閲覧者のアカウントの一覧・編集と、新規作成ができます。閲覧者はこのページにアクセスできません。
         </p>
-        <PermissionAccountForm stores={stores} />
+        <PermissionSettingsContent stores={stores} />
       </main>
     </div>
   );

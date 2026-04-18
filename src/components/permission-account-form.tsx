@@ -12,7 +12,13 @@ const ALL_STORES_VALUE = "__all__";
 
 type RoleChoice = "admin" | "employee" | "viewer";
 
-export function PermissionAccountForm({ stores }: { stores: Store[] }) {
+export function PermissionAccountForm({
+  stores,
+  onCreated,
+}: {
+  stores: Store[];
+  onCreated?: () => void;
+}) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<RoleChoice>("employee");
   const [loginId, setLoginId] = useState("");
@@ -97,6 +103,7 @@ export function PermissionAccountForm({ stores }: { stores: Store[] }) {
         setLoginId("");
         setSelected(new Set());
         setRole("employee");
+        onCreated?.();
       }
     } finally {
       setSaving(false);
