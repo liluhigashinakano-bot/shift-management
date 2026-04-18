@@ -19,10 +19,11 @@ function requireStaffRead(session: any) {
   return { ok: true as const, role };
 }
 
-function requireStaffWrite(session: any) {
+/** キャストの追加・編集・削除・PW再発行（管理者のみ） */
+function requireCastAdminWrite(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   const role = (session.user as any).role as string | undefined;
-  if (role !== "admin" && role !== "employee") {
+  if (role !== "admin") {
     return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
   return { ok: true as const, role };
@@ -56,7 +57,7 @@ function normalizeStoreId(storeId: unknown): string | null {
 // POST: キャスト作成/更新/削除
 async function handleCastsPost(req: NextRequest): Promise<Response> {
   const session = await auth();
-  const guard = requireStaffWrite(session);
+  const guard = requireCastAdminWrite(session);
   if (!guard.ok) return guard.res;
 
   let body: Record<string, unknown>;

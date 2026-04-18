@@ -280,7 +280,7 @@ export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
     <div className="space-y-4">
       {readOnly && (
         <p className="text-sm text-muted-foreground">
-          閲覧のみ（追加・編集は管理者・従業員が行います）
+          閲覧のみ（キャストの追加・編集・削除・パスワード再発行は管理者のみ行えます）
         </p>
       )}
       <div className="flex border-b border-gray-300 overflow-x-auto">
