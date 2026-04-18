@@ -31,6 +31,7 @@ export default async function CastsPage() {
       <main className="max-w-[1200px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-4">在籍キャスト一覧</h1>
         <CastManager
+          readOnly={role === "viewer"}
           initialCasts={JSON.parse(JSON.stringify(casts))}
           stores={stores.map((s) => ({ id: s.id, name: s.name }))}
         />

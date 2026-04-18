@@ -19,7 +19,10 @@
     "db:push": "npx prisma db push",
     "db:reset": "npx prisma migrate reset --force",
     "docs:pdf": "node scripts/print-manual-pdf.mjs",
-    "docs:pdf:cast": "node scripts/print-manual-pdf.mjs CAST_MANUAL.md CAST_MANUAL.pdf"
+    "docs:pdf:cast": "node scripts/print-manual-pdf.mjs CAST_MANUAL.md CAST_MANUAL.pdf",
+    "docs:crop-images": "node scripts/crop-manual-images.mjs",
+    "backup": "node scripts/backup.mjs",
+    "backup:daily": "node scripts/backup.mjs --daily"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
@@ -54,6 +57,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "marked": "^15.0.12",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

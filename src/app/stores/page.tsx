@@ -8,7 +8,8 @@ export default async function StoresPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  if ((session.user as any).role !== "admin") redirect("/dashboard");
+  const role = (session.user as { role?: string }).role;
+  if (role === "cast") redirect("/dashboard");
 
   const stores = await prisma.store.findMany({
     orderBy: { name: "asc" },
@@ -27,6 +28,7 @@ export default async function StoresPage() {
       <main className="max-w-[800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-4">店舗管理</h1>
         <StoreManager
+          readOnly={role === "viewer"}
           initialStores={stores.map((s) => ({
             id: s.id,
             name: s.name,

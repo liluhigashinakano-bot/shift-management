@@ -70,7 +70,7 @@ export function RequestForm({
   const [entries, setEntries] = useState(defaultEntries);
   const [saving, setSaving] = useState(false);
 
-  const isAdmin = userRole === "admin" || userRole === "employee";
+  const canEditStaff = userRole === "admin" || userRole === "employee";
 
   const lockedFor = (pid: string) => periodLocks[pid] ?? false;
   const currentLocked = lockedFor(periodId);
@@ -96,8 +96,9 @@ export function RequestForm({
   };
 
   const openEditModal = (r: Request) => {
+    if (userRole === "viewer") return;
     if (lockedFor(r.periodId)) return;
-    if (!isAdmin && r.castId !== userId) return;
+    if (!canEditStaff && r.castId !== userId) return;
     const key = findDayDateKeyForRequest(r.date, days);
     if (!key) return;
     const next = { ...defaultEntries };
@@ -112,7 +113,7 @@ export function RequestForm({
       notes: rawNotes,
     };
     setEntries(next);
-    if (isAdmin) setSelectedCast(r.castId);
+    if (canEditStaff) setSelectedCast(r.castId);
     setEditingRequest(r);
     setAddModal(true);
   };
@@ -145,7 +146,7 @@ export function RequestForm({
       return;
     }
 
-    const castId = isAdmin ? selectedCast : userId;
+    const castId = canEditStaff ? selectedCast : userId;
     if (!castId) return;
 
     const selected = Object.entries(entries)
@@ -202,8 +203,9 @@ export function RequestForm({
   };
 
   const canEditRow = (r: Request) => {
+    if (userRole === "viewer") return false;
     if (lockedFor(r.periodId)) return false;
-    if (isAdmin) return true;
+    if (canEditStaff) return true;
     return r.castId === userId;
   };
 
@@ -232,7 +234,7 @@ export function RequestForm({
         <Button
           className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           onClick={openAddModal}
-          disabled={currentLocked}
+          disabled={currentLocked || userRole === "viewer"}
         >
           + シフト希望を登録
         </Button>
@@ -259,7 +261,7 @@ export function RequestForm({
               <th className="border border-gray-300 px-1.5 py-1 text-left sm:px-3 sm:py-2 min-w-[5.5rem]">
                 備考
               </th>
-              {isAdmin && (
+              {canEditStaff && (
                 <th className="border border-gray-300 px-1.5 py-1 text-center sm:px-3 sm:py-2">操作</th>
               )}
             </tr>
@@ -268,7 +270,7 @@ export function RequestForm({
             {requests.length === 0 ? (
               <tr>
                 <td
-                  colSpan={isAdmin ? 9 : 8}
+                  colSpan={canEditStaff ? 9 : 8}
                   className="border border-gray-300 px-2 py-4 text-center text-gray-400 sm:py-8"
                 >
                   シフト希望がまだ登録されていません
@@ -313,7 +315,7 @@ export function RequestForm({
                         {r.notes || ""}
                       </div>
                     </td>
-                    {isAdmin && (
+                    {canEditStaff && (
                       <td className={`${cell} text-center px-1 sm:px-2`}>
                         <button
                           type="button"
@@ -352,7 +354,7 @@ export function RequestForm({
                 この希望の期間は締め切りのため変更・削除できません。
               </p>
             )}
-            {isAdmin && (
+            {canEditStaff && (
               <div className="space-y-2">
                 <Label>キャスト</Label>
                 <select
@@ -487,7 +489,7 @@ export function RequestForm({
           </div>
           <div className="flex flex-col-reverse gap-2 mt-4 pt-3 border-t sm:flex-row sm:items-center sm:justify-between">
             <div className="flex gap-2">
-              {editingRequest && (
+              {editingRequest && canEditStaff && (
                 <Button
                   type="button"
                   variant="destructive"
@@ -507,7 +509,7 @@ export function RequestForm({
                 onClick={() => void handleSubmit()}
                 disabled={
                   saving ||
-                  (isAdmin && !editingRequest && !selectedCast) ||
+                  (canEditStaff && !editingRequest && !selectedCast) ||
                   modalLocked
                 }
                 className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"

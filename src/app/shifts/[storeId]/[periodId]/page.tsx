@@ -6,6 +6,7 @@ import { ShiftGrid } from "@/components/shift-grid/shift-grid";
 import { SyncButtons } from "@/components/sync-buttons";
 import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
 import Link from "next/link";
+import { assertStorePageAccess } from "@/lib/store-access";
 
 export default async function ShiftPage({
   params,
@@ -36,6 +37,8 @@ export default async function ShiftPage({
   });
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
+
+  assertStorePageAccess(session.user as any, storeId);
 
   const allCasts = await prisma.user.findMany({
     where: { role: "cast" },
@@ -117,7 +120,10 @@ export default async function ShiftPage({
   }
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
-  const isAdmin = (session.user as any).role === "admin" || (session.user as any).role === "employee";
+  const isAdmin =
+    (session.user as any).role === "admin" ||
+    (session.user as any).role === "employee";
+  const isViewer = (session.user as any).role === "viewer";
 
   return (
     <div className="min-h-dvh shift-sheet-print-page">
@@ -187,6 +193,7 @@ export default async function ShiftPage({
             name: c.name,
             store: c.store,
           }))}
+          readOnly={isViewer}
         />
       </main>
     </div>

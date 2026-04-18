@@ -63,6 +63,8 @@ type Period = {
 type Props = {
   initialData: Period;
   allCasts: { id: string; name: string; store: { name: string } | null }[];
+  /** 閲覧者など: 編集・追加・ドラッグ不可（締切と同様の扱い） */
+  readOnly?: boolean;
 };
 
 type EditTarget = {
@@ -141,7 +143,7 @@ function chunkShiftDaysByCalendarPrint(days: ShiftDay[]): ShiftDay[][] {
   return chunks;
 }
 
-export function ShiftGrid({ initialData, allCasts }: Props) {
+export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
   const [data, setData] = useState(initialData);
   const [addDialog, setAddDialog] = useState<{ dayId: string; dayLabel: string } | null>(null);
   const [editDay, setEditDay] = useState<ShiftDay | null>(null);
@@ -162,7 +164,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
     if (res.ok) setData(await res.json());
   }, [data.id]);
 
-  const slotsLocked = Boolean(data.shiftSlotsLocked);
+  const slotsLocked = Boolean(data.shiftSlotsLocked) || readOnly;
   const addShiftBlocked =
     Boolean(data.shiftRequestsLocked) || slotsLocked;
 

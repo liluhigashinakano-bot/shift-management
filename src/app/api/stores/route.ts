@@ -11,9 +11,18 @@ function requireAdmin(session: any) {
   return { ok: true as const };
 }
 
+function requireStoreViewer(session: any) {
+  if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const role = (session.user as any).role as string | undefined;
+  if (role === "cast") {
+    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  return { ok: true as const };
+}
+
 export async function GET() {
   const session = await auth();
-  const guard = requireAdmin(session);
+  const guard = requireStoreViewer(session);
   if (!guard.ok) return guard.res;
 
   const stores = await prisma.store.findMany({

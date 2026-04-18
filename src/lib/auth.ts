@@ -51,7 +51,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           const user = userId
             ? await prisma.user.findUnique({
                 where: { id: userId },
-                include: { store: true },
+                include: {
+                  store: true,
+                  assignedStores: { select: { storeId: true } },
+                },
               })
             : null;
 
@@ -75,6 +78,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             role: user.role,
             storeId: user.storeId,
             storeName: user.store?.name,
+            accessAllStores: user.accessAllStores,
+            assignedStoreIds: user.assignedStores.map((a) => a.storeId),
           };
         } catch (e) {
           console.error("[auth][authorize]", e);
@@ -90,6 +95,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.role = (user as any).role;
         token.storeId = (user as any).storeId;
         token.storeName = (user as any).storeName;
+        token.accessAllStores = (user as any).accessAllStores;
+        token.assignedStoreIds = (user as any).assignedStoreIds;
       }
       return token;
     },
@@ -99,6 +106,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (session.user as any).role = token.role;
         (session.user as any).storeId = token.storeId;
         (session.user as any).storeName = token.storeName;
+        (session.user as any).accessAllStores = token.accessAllStores;
+        (session.user as any).assignedStoreIds = token.assignedStoreIds;
       }
       return session;
     },

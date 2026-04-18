@@ -8,7 +8,13 @@ import { Modal } from "@/components/modal";
 
 type Store = { id: string; name: string; castCount: number };
 
-export function StoreManager({ initialStores }: { initialStores: Store[] }) {
+export function StoreManager({
+  initialStores,
+  readOnly = false,
+}: {
+  initialStores: Store[];
+  readOnly?: boolean;
+}) {
   const [stores, setStores] = useState(initialStores);
   const [addModal, setAddModal] = useState(false);
   const [editStore, setEditStore] = useState<Store | null>(null);
@@ -50,6 +56,10 @@ export function StoreManager({ initialStores }: { initialStores: Store[] }) {
 
   return (
     <div className="space-y-4">
+      {readOnly && (
+        <p className="text-sm text-muted-foreground">閲覧のみ（変更は管理者・従業員が行います）</p>
+      )}
+      {!readOnly && (
       <Button
         className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
         onClick={() => {
@@ -59,13 +69,16 @@ export function StoreManager({ initialStores }: { initialStores: Store[] }) {
       >
         + 店舗追加
       </Button>
+      )}
 
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="bg-gray-100">
             <th className="border border-gray-300 px-4 py-2 text-left">店舗名</th>
             <th className="border border-gray-300 px-4 py-2 text-center">キャスト数</th>
+            {!readOnly && (
             <th className="border border-gray-300 px-4 py-2 text-center w-24">操作</th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -73,6 +86,7 @@ export function StoreManager({ initialStores }: { initialStores: Store[] }) {
             <tr key={s.id} className="hover:bg-gray-50">
               <td className="border border-gray-300 px-4 py-2 font-medium">{s.name}</td>
               <td className="border border-gray-300 px-4 py-2 text-center">{s.castCount}名</td>
+              {!readOnly && (
               <td className="border border-gray-300 px-4 py-2 text-center">
                 <button
                   className="text-xs text-blue-600 hover:text-blue-800"
@@ -84,6 +98,7 @@ export function StoreManager({ initialStores }: { initialStores: Store[] }) {
                   編集
                 </button>
               </td>
+              )}
             </tr>
           ))}
         </tbody>

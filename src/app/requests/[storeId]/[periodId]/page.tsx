@@ -10,6 +10,7 @@ import { getGoogleFormPublicUrl } from "@/lib/google-form-config";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { CastGoogleFormBanner } from "@/components/cast-google-form-banner";
 import { FormImportButton } from "@/components/form-import-button";
+import { assertStorePageAccess } from "@/lib/store-access";
 
 export default async function RequestsPage({
   params,
@@ -31,6 +32,10 @@ export default async function RequestsPage({
   });
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
+
+  if (role !== "cast") {
+    assertStorePageAccess(session.user as any, storeId);
+  }
 
   const userId = session.user.id;
 
@@ -171,11 +176,13 @@ export default async function RequestsPage({
               >
                 シフト表を見る &rarr;
               </Link>
+              {(role === "admin" || role === "employee") && (
               <FormImportButton
                 periodId={periodId}
                 sheetsConfigured={sheetsOk}
                 disabled={period.shiftRequestsLocked || period.shiftSlotsLocked}
               />
+              )}
             </div>
           )}
           {role === "cast" && (

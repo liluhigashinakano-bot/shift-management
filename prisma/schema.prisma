@@ -12,8 +12,9 @@ model Store {
   name      String   @unique
   createdAt DateTime @default(now())
 
-  users        User[]
-  shiftPeriods ShiftPeriod[]
+  users            User[]
+  shiftPeriods     ShiftPeriod[]
+  userAssignments  UserStoreAssignment[]
 }
 
 model User {
@@ -22,17 +23,32 @@ model User {
   email        String   @unique
   /// ログイン用キャストID（キャストのみ。メール local と独立して設定可）
   castLoginId  String?  @unique
+  /// 管理者・従業員・閲覧者のログインID（cast と別。メール形式でなくてよい）
+  staffLoginId String?  @unique
   passwordHash String
-  role         String   @default("cast") // admin, employee, cast
+  role         String   @default("cast") // admin, employee, viewer, cast
   hourlyRate   Int?     // 時給（キャスト用）
   posId        String?  @unique // POS連携用ID
-  storeId      String?  // 所属店舗（nullなら全店舗管理者）
+  storeId      String?  // 所属店舗（キャスト・従業員の主所属など。管理者の全店は null + accessAllStores）
   store        Store?   @relation(fields: [storeId], references: [id])
+  /// true のとき店舗制限なし（管理者に付与可。従業員/閲覧者の「全店舗」選択時）
+  accessAllStores Boolean @default(false)
   createdAt    DateTime @default(now())
 
   shiftSlots      ShiftSlot[]
   shiftRequests   ShiftRequest[]
   adjustmentsFrom ShiftAdjustment[]
+  assignedStores  UserStoreAssignment[]
+}
+
+/// 従業員・閲覧者などが複数店舗に紐づく場合。空で accessAllStores が false なら storeId のみ参照（後方互換）
+model UserStoreAssignment {
+  userId  String
+  storeId String
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store   Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storeId])
 }
 
 model ShiftPeriod {

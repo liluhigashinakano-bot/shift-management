@@ -10,7 +10,16 @@ import {
 } from "@/lib/cast-duplicate-query";
 import { createCastUserRecord } from "@/lib/cast-create-user";
 
-function requireStaff(session: any) {
+function requireStaffRead(session: any) {
+  if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const role = (session.user as any).role as string | undefined;
+  if (role !== "admin" && role !== "employee" && role !== "viewer") {
+    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  return { ok: true as const, role };
+}
+
+function requireStaffWrite(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   const role = (session.user as any).role as string | undefined;
   if (role !== "admin" && role !== "employee") {
@@ -27,7 +36,7 @@ function generatePassword(): string {
 // GET: キャスト一覧取得
 export async function GET(req: NextRequest) {
   const session = await auth();
-  const guard = requireStaff(session);
+  const guard = requireStaffRead(session);
   if (!guard.ok) return guard.res;
 
   const casts = await prisma.user.findMany({
@@ -47,7 +56,7 @@ function normalizeStoreId(storeId: unknown): string | null {
 // POST: キャスト作成/更新/削除
 async function handleCastsPost(req: NextRequest): Promise<Response> {
   const session = await auth();
-  const guard = requireStaff(session);
+  const guard = requireStaffWrite(session);
   if (!guard.ok) return guard.res;
 
   let body: Record<string, unknown>;

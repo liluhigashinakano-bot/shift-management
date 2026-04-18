@@ -26,12 +26,15 @@ type Props = {
 const navItems = [
   { href: "/dashboard", label: "ダッシュボード", staffOnly: true },
   { href: "/casts", label: "キャスト管理", staffOnly: true },
-  { href: "/stores", label: "店舗管理", adminOnly: true },
+  { href: "/stores", label: "店舗管理", staffNotCast: true },
+  { href: "/permissions", label: "権限設定", adminOnly: true },
 ];
 
 function filterNavItems(user: Props["user"]) {
   return navItems.filter((item) => {
     if (item.adminOnly && user.role !== "admin") return false;
+    if ((item as { staffNotCast?: boolean }).staffNotCast && user.role === "cast")
+      return false;
     if ((item as { staffOnly?: boolean }).staffOnly && user.role === "cast")
       return false;
     if ((item as { castOnly?: boolean }).castOnly && user.role !== "cast")
@@ -58,8 +61,10 @@ export function NavHeader({ user }: Props) {
     user.role === "admin"
       ? "管理者"
       : user.role === "employee"
-        ? "社員"
-        : "キャスト";
+        ? "従業員"
+        : user.role === "viewer"
+          ? "閲覧者"
+          : "キャスト";
 
   return (
     <header className="sticky top-0 z-40 bg-gradient-to-r from-pink-100 via-purple-50 to-sky-100 border-b border-pink-200/50 shadow-sm pt-[env(safe-area-inset-top)]">

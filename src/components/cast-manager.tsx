@@ -20,6 +20,7 @@ type Store = { id: string; name: string };
 type Props = {
   initialCasts: Cast[];
   stores: Store[];
+  readOnly?: boolean;
 };
 
 function displayCastId(c: Cast): string {
@@ -28,7 +29,7 @@ function displayCastId(c: Cast): string {
     : c.email.split("@")[0]) || "—";
 }
 
-export function CastManager({ initialCasts, stores }: Props) {
+export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
   const [casts, setCasts] = useState(initialCasts);
   const [editModal, setEditModal] = useState<Cast | null>(null);
   const [addModal, setAddModal] = useState(false);
@@ -276,6 +277,11 @@ export function CastManager({ initialCasts, stores }: Props) {
 
   return (
     <div className="space-y-4">
+      {readOnly && (
+        <p className="text-sm text-muted-foreground">
+          閲覧のみ（追加・編集は管理者・従業員が行います）
+        </p>
+      )}
       <div className="flex border-b border-gray-300 overflow-x-auto">
         {stores.map((s) => {
           const count = casts.filter((c) => c.storeId === s.id).length;
@@ -297,12 +303,14 @@ export function CastManager({ initialCasts, stores }: Props) {
       </div>
 
       <div className="flex items-center gap-3">
+        {!readOnly && (
         <Button
           className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           onClick={openAdd}
         >
           + キャスト追加
         </Button>
+        )}
         <span className="text-sm text-gray-500">
           {selectedStoreName}：{storeCasts.length}名
         </span>
@@ -314,13 +322,15 @@ export function CastManager({ initialCasts, stores }: Props) {
             <tr className="bg-gray-100">
               <th className="border border-gray-300 px-3 py-2 text-left">キャスト名</th>
               <th className="border border-gray-300 px-3 py-2 text-left">キャストID</th>
+              {!readOnly && (
               <th className="border border-gray-300 px-3 py-2 text-center w-24">操作</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {storeCasts.length === 0 ? (
               <tr>
-                <td colSpan={3} className="border border-gray-300 px-3 py-8 text-center text-gray-400">
+                <td colSpan={readOnly ? 2 : 3} className="border border-gray-300 px-3 py-8 text-center text-gray-400">
                   キャストが登録されていません
                 </td>
               </tr>
@@ -331,6 +341,7 @@ export function CastManager({ initialCasts, stores }: Props) {
                   <td className="border border-gray-300 px-3 py-1.5 font-mono text-xs text-gray-700">
                     {displayCastId(c)}
                   </td>
+                  {!readOnly && (
                   <td className="border border-gray-300 px-2 py-1.5 text-center">
                     <button
                       type="button"
@@ -354,6 +365,7 @@ export function CastManager({ initialCasts, stores }: Props) {
                       削除
                     </button>
                   </td>
+                  )}
                 </tr>
               ))
             )}

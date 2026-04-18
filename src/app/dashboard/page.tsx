@@ -6,6 +6,7 @@ import { NavHeader } from "@/components/nav-header";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getAccessibleStoreIds } from "@/lib/store-access";
 
 // クエリ（searchParams）の変更（例: ?year=...&start=...）を必ず反映する
 export const dynamic = "force-dynamic";
@@ -53,7 +54,12 @@ export default async function DashboardPage({
   const role = (session.user as any).role as string | undefined;
   if (role === "cast") redirect("/mypage");
 
-  const stores = await prisma.store.findMany({ orderBy: { name: "asc" } });
+  const allStores = await prisma.store.findMany({ orderBy: { name: "asc" } });
+  const allowedIds = getAccessibleStoreIds(session.user as any);
+  const stores =
+    allowedIds === null
+      ? allStores
+      : allStores.filter((s) => allowedIds.includes(s.id));
 
   // 表示対象（現在= now から、未来は「次の期間」まで）
   const now = new Date();
@@ -178,6 +184,11 @@ export default async function DashboardPage({
           </form>
         </div>
 
+        {stores.length === 0 ? (
+          <p className="text-sm text-muted-foreground border rounded-lg border-dashed p-6 text-center">
+            表示できる店舗がありません。管理者に所属店舗の設定を確認してください。
+          </p>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {stores.map((store) => {
             const periodFor = (p: ShiftPeriodKey) => {
@@ -243,6 +254,7 @@ export default async function DashboardPage({
             );
           })}
         </div>
+        )}
       </main>
     </div>
   );

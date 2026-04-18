@@ -6,6 +6,7 @@ import { AdjustmentTable } from "@/components/adjustment-table";
 import { CastPeriodSelector } from "@/components/cast-period-selector";
 import Link from "next/link";
 import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
+import { assertStorePageAccess } from "@/lib/store-access";
 
 export default async function AdjustmentsPage({
   params,
@@ -36,6 +37,10 @@ export default async function AdjustmentsPage({
   });
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
+
+  if (role !== "cast") {
+    assertStorePageAccess(session.user as any, storeId);
+  }
 
   const selectablePeriods = await (async () => {
     if (role !== "cast") return [];

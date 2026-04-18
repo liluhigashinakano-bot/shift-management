@@ -17,6 +17,14 @@ export async function findUserIdForLogin(rawLogin: string): Promise<string | nul
     return rows[0]?.id ?? null;
   }
 
+  const staffRows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "User" WHERE "staffLoginId" IS NOT NULL
+      AND "role" IN ('admin', 'employee', 'viewer')
+      AND lower("staffLoginId") = lower(${normalized})
+    LIMIT 1
+  `;
+  if (staffRows[0]?.id) return staffRows[0].id;
+
   const emailGuess = `${normalized}@cast.local`;
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT "id" FROM "User" WHERE "role" = 'cast' AND (
