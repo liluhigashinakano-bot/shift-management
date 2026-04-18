@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 function generatePassword(): string {
   return crypto.randomBytes(9).toString("base64url");
 }
@@ -52,6 +54,11 @@ export async function GET() {
       storeId: u.storeId,
       assignedStoreIds: u.assignedStores.map((a) => a.storeId),
     })),
+    {
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0",
+      },
+    },
   );
 }
 

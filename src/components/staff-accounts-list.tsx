@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,7 @@ export function StaffAccountsList({
   refreshKey: number;
   currentUserId: string;
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +73,10 @@ export function StaffAccountsList({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/staff-accounts", { credentials: "same-origin" });
+      const res = await fetch("/api/staff-accounts", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
       if (!res.ok) {
         setError("一覧の取得に失敗しました");
         setRows([]);
@@ -173,6 +178,7 @@ export function StaffAccountsList({
       }
       closeEdit();
       await load();
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -207,6 +213,7 @@ export function StaffAccountsList({
       }
       closeEdit();
       await load();
+      router.refresh();
     } finally {
       setSaving(false);
     }

@@ -3,6 +3,39 @@ import Credentials from "next-auth/providers/credentials";
 import { compareSync } from "bcryptjs";
 import { prisma } from "./db";
 import { findUserIdForLogin } from "./auth-lookup-user";
+import type { JWT } from "next-auth/jwt";
+
+/** ログイン後も DB の変更（権限・店舗・名前など）をセッションに反映する */
+async function refreshJwtUserFieldsFromDb(token: JWT) {
+  const id = token.sub;
+  if (!id || typeof id !== "string") return;
+
+  try {
+    const dbUser = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        name: true,
+        email: true,
+        role: true,
+        storeId: true,
+        accessAllStores: true,
+        assignedStores: { select: { storeId: true } },
+        store: { select: { name: true } },
+      },
+    });
+    if (!dbUser) return;
+
+    token.name = dbUser.name;
+    token.email = dbUser.email;
+    token.role = dbUser.role;
+    token.storeId = dbUser.storeId;
+    token.storeName = dbUser.store?.name ?? null;
+    token.accessAllStores = dbUser.accessAllStores;
+    token.assignedStoreIds = dbUser.assignedStores.map((a) => a.storeId);
+  } catch (e) {
+    console.error("[auth][refreshJwtUserFieldsFromDb]", e);
+  }
+}
 
 // Auth.js は JWT 暗号化に secret が必須。.env が読み込まれないケースでも開発を止めないためのフォールバック
 function resolveAuthSecret(): string {
@@ -77,7 +110,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             email: user.email,
             role: user.role,
             storeId: user.storeId,
-            storeName: user.store?.name,
+            storeName: user.store?.name ?? null,
             accessAllStores: user.accessAllStores,
             assignedStoreIds: user.assignedStores.map((a) => a.storeId),
           };
@@ -92,22 +125,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
+        token.name = (user as any).name;
+        token.email = (user as any).email;
         token.role = (user as any).role;
         token.storeId = (user as any).storeId;
         token.storeName = (user as any).storeName;
         token.accessAllStores = (user as any).accessAllStores;
         token.assignedStoreIds = (user as any).assignedStoreIds;
+        return token;
       }
+      await refreshJwtUserFieldsFromDb(token);
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = (token.sub as string) ?? "";
+        session.user.name = (token.name as string) ?? session.user.name;
+        session.user.email = (token.email as string) ?? session.user.email;
         (session.user as any).role = token.role;
-        (session.user as any).storeId = token.storeId;
-        (session.user as any).storeName = token.storeName;
+        (session.user as any).storeId = token.storeId ?? null;
+        (session.user as any).storeName = token.storeName ?? null;
         (session.user as any).accessAllStores = token.accessAllStores;
-        (session.user as any).assignedStoreIds = token.assignedStoreIds;
+        (session.user as any).assignedStoreIds = Array.isArray(token.assignedStoreIds)
+          ? token.assignedStoreIds
+          : [];
       }
       return session;
     },
