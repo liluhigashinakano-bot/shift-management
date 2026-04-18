@@ -197,3 +197,14 @@
 - `docs/*.pdf`
 
 ---
+
+### 2026-04-18（CAST_MANUAL 注記の削除）
+
+**概要:** `CAST_MANUAL.md` から「スクリーンショット／`cast-*.png` のパス・上書き」に関する注記を削除。`CAST_MANUAL.pdf` を再生成。
+
+**変更ファイル（主なもの）:**
+- `docs/CAST_MANUAL.md`
+- `docs/CAST_MANUAL.pdf`
+- `docs/WORK_LOG.md`
+
+---
