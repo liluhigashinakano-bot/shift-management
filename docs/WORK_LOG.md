@@ -232,3 +232,16 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-04-18（シフト表の印刷：ヘッダー非表示・横向き・日付ブロック改ページ）
+
+**概要:** シフト表画面で印刷時に画面上部ツールバー（ダッシュボードリンク・締切・他画面リンク等）を `print:hidden`。既存の `globals.css` で `header` 非表示は継続。表をカレンダー日 1〜8 / 9〜15 / 16〜23 / 24〜31 で塊分けし、塊の間で改ページ。横向き `@page` は `ShiftPrintStyles` でマウント時のみ head に注入。
+
+**変更ファイル（主なもの）:**
+- `src/components/shift-grid/shift-grid.tsx`
+- `src/components/shift-grid/shift-print-styles.tsx`
+- `src/app/shifts/[storeId]/[periodId]/page.tsx`
+- `src/app/globals.css`
+- `docs/WORK_LOG.md`
+
+---

@@ -14,6 +14,8 @@ import { DayInfoEditor } from "./day-info-editor";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { ShiftPrintStyles } from "./shift-print-styles";
 
 type Cast = { id: string; name: string };
 type ShiftSlot = {
@@ -117,6 +119,26 @@ function timeRowBg(slot: number): string {
   const hour = Math.floor(slot);
   if (hour >= 25) return "bg-gray-50"; // 深夜帯は薄いグレー
   return hour % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+}
+
+/** 印刷プレビュー用：1〜8日・9〜15日・16〜23日・24〜31日のブロックに分割 */
+const PRINT_CALENDAR_RANGES: readonly [number, number][] = [
+  [1, 8],
+  [9, 15],
+  [16, 23],
+  [24, 31],
+];
+
+function chunkShiftDaysByCalendarPrint(days: ShiftDay[]): ShiftDay[][] {
+  const chunks: ShiftDay[][] = [];
+  for (const [lo, hi] of PRINT_CALENDAR_RANGES) {
+    const chunk = days.filter((d) => {
+      const dom = new Date(d.date).getDate();
+      return dom >= lo && dom <= hi;
+    });
+    if (chunk.length > 0) chunks.push(chunk);
+  }
+  return chunks;
 }
 
 export function ShiftGrid({ initialData, allCasts }: Props) {
@@ -238,8 +260,8 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   const DAY_COL_WIDTH = 46 + 46 + 14 + 38; // 出勤/退勤/人数/メモ（px）
   const TABLE_MIN_WIDTH = TIME_COL_WIDTH + DAYS_PER_TABLE * DAY_COL_WIDTH; // 全体幅を揃える（px）
 
-  const mid = Math.min(DAYS_PER_TABLE, days.length); // 前半8日、後半は残り
-  const weeks = [days.slice(0, mid), days.slice(mid)];
+  const splitForPrint = chunkShiftDaysByCalendarPrint(days);
+  const weeks = splitForPrint.length > 0 ? splitForPrint : [days];
 
   const padWeek = (week: ShiftDay[]): (ShiftDay | null)[] => {
     const diff = DAYS_PER_TABLE - week.length;
@@ -249,10 +271,14 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
 
   return (
     <div className="space-y-8">
+      <ShiftPrintStyles />
       {weeks.map((week, weekIdx) => {
         const weekDays = padWeek(week);
         return (
-        <div key={weekIdx}>
+        <div
+          key={weekIdx}
+          className={cn(weekIdx < weeks.length - 1 && "shift-print-chunk-break")}
+        >
           {/* 営業情報ボタン行（テーブルの外） */}
           <div
             className="flex no-print"

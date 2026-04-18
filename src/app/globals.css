@@ -154,15 +154,10 @@
 
 /* 印刷用CSS */
 @media print {
-  /* ナビヘッダー・ボタン類・操作行を非表示 */
+  /* ナビヘッダー（画面上部のシフト管理・メニュー等）・操作系を非表示 */
   header,
   .no-print,
   tr.no-print {
-    display: none !important;
-  }
-
-  /* ページタイトル行（ダッシュボードリンク+ボタン群）を非表示 */
-  .flex.items-center.gap-4.mb-4 {
     display: none !important;
   }
 

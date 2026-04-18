@@ -129,7 +129,7 @@ export default async function ShiftPage({
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="mb-4 min-w-0">
+        <div className="mb-4 min-w-0 print:hidden">
         <div className="flex items-center gap-1 sm:gap-2 flex-nowrap overflow-x-auto max-w-full pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
           <Link
             href="/dashboard"
@@ -177,6 +177,9 @@ export default async function ShiftPage({
           </div>
         </div>
         </div>
+        <p className="mb-3 hidden text-center text-base font-semibold text-gray-900 print:block print:border-b print:border-gray-400 print:pb-2">
+          {period.store.name} ‐ {period.year}年{period.month}月{halfLabel}
+        </p>
         <ShiftGrid
           initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo }))}
           allCasts={allCasts.map((c) => ({
