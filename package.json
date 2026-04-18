@@ -18,7 +18,8 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:push": "npx prisma db push",
     "db:reset": "npx prisma migrate reset --force",
-    "docs:pdf": "node scripts/print-manual-pdf.mjs"
+    "docs:pdf": "node scripts/print-manual-pdf.mjs",
+    "docs:pdf:cast": "node scripts/print-manual-pdf.mjs CAST_MANUAL.md CAST_MANUAL.pdf"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

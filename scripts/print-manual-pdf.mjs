@@ -1,5 +1,7 @@
 /**
- * USER_MANUAL.md → HTML → Chrome headless で docs/USER_MANUAL.pdf を生成
+ * Markdown マニュアル → HTML → Chrome headless で PDF を生成
+ * デフォルト: USER_MANUAL.md → docs/USER_MANUAL.pdf
+ * 例: node scripts/print-manual-pdf.mjs CAST_MANUAL.md CAST_MANUAL.pdf
  * 依存: marked（devDependencies）
  */
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
@@ -11,17 +13,20 @@ import { marked } from "marked";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const docs = join(root, "docs");
-const mdPath = join(docs, "USER_MANUAL.md");
-const htmlPath = join(docs, "_manual-print.html");
-const pdfPath = join(docs, "USER_MANUAL.pdf");
+const mdFile = process.argv[2] || "USER_MANUAL.md";
+const pdfFile = process.argv[3] || "USER_MANUAL.pdf";
+const mdPath = join(docs, mdFile);
+const htmlPath = join(docs, "_manual-print-temp.html");
+const pdfPath = join(docs, pdfFile);
 
 const md = readFileSync(mdPath, "utf8");
 const body = marked.parse(md);
+const docTitle = mdFile.replace(/\.md$/i, "").replace(/_/g, " ");
 const html = `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>シフト管理アプリ 利用マニュアル</title>
+<title>${docTitle}</title>
 <style>
   body { font-family: system-ui, "Segoe UI", "Hiragino Sans", sans-serif; line-height: 1.55; max-width: 900px; margin: 24px auto; padding: 0 16px; color: #222; }
   img { max-width: 100%; height: auto; }

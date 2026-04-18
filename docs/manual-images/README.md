@@ -2,7 +2,22 @@
 
 画像は `USER_MANUAL.md` から `manual-images/ファイル名` として参照されています。
 
-## 現在あるファイル
+## キャスト向け（`CAST_MANUAL.md` 用）
+
+| ファイル | 内容の目安 |
+|----------|------------|
+| `cast-01-requests.png` | 希望一覧（キャスト） |
+| `cast-02-request-modal.png` | シフト希望登録モーダル |
+| `cast-03-confirmed-grid.png` | 確定シフト（格子） |
+| `cast-04-adjustments.png` | 調整一覧（希望と確定） |
+| `cast-05-period-dropdown.png` | 期間プルダウン |
+| `cast-06-send-list-modal.png` | 送付用一覧（コピー） |
+
+任意: `cast-00-login.png` を置けば、`CAST_MANUAL.md` の §1 に画像を追加できます。
+
+---
+
+## 現在あるファイル（共通・管理者向けなど）
 
 | ファイル | 内容の目安 |
 |----------|------------|
@@ -38,3 +53,11 @@ npm run docs:pdf
 ```
 
 出力: `docs/USER_MANUAL.pdf`（Windows では **Google Chrome** の headless を利用します）。
+
+キャスト向け:
+
+```bash
+npm run docs:pdf:cast
+```
+
+出力: `docs/CAST_MANUAL.pdf`

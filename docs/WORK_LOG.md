@@ -174,3 +174,15 @@
 - `docs/manual-images/README.md`
 
 ---
+
+### 2026-04-18（キャスト向けマニュアル）
+
+**概要:** キャスト専用アカウントの画面キャプチャ 6 枚を `cast-01`〜`cast-06` として `docs/manual-images/` に配置。本文は `docs/CAST_MANUAL.md` に新設。`USER_MANUAL.md` §10 は `CAST_MANUAL` への参照に差し替え。PDF は `npm run docs:pdf:cast` で `docs/CAST_MANUAL.pdf` を出力できるよう `print-manual-pdf.mjs` を引数対応に拡張。
+
+**変更ファイル（主なもの）:**
+- `docs/CAST_MANUAL.md`
+- `docs/manual-images/cast-0*.png`（6 ファイル）
+- `docs/USER_MANUAL.md`, `docs/manual-images/README.md`
+- `scripts/print-manual-pdf.mjs`, `package.json`
+
+---
