@@ -171,3 +171,58 @@ export async function PATCH(
     },
   });
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!requireAdmin(session)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  const me = session?.user ? (session.user as { id?: string }).id : undefined;
+  if (me && id === me) {
+    return NextResponse.json(
+      { error: "ログイン中の自分自身は削除できません" },
+      { status: 400 },
+    );
+  }
+
+  const staff = await assertStaffUser(id);
+  if (!staff) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (staff.role === "admin") {
+    const adminCount = await prisma.user.count({ where: { role: "admin" } });
+    if (adminCount <= 1) {
+      return NextResponse.json(
+        { error: "最後の管理者アカウントは削除できません" },
+        { status: 400 },
+      );
+    }
+  }
+
+  try {
+    await prisma.user.delete({ where: { id } });
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? (e as { code: string }).code
+        : "";
+    if (code === "P2003") {
+      return NextResponse.json(
+        {
+          error:
+            "このユーザーに紐づくデータがあるため削除できません（シフト希望などを先に整理してください）",
+        },
+        { status: 409 },
+      );
+    }
+    throw e;
+  }
+
+  return NextResponse.json({ ok: true });
+}

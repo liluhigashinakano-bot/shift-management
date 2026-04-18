@@ -30,7 +30,10 @@ export default async function PermissionsPage() {
         <p className="text-sm text-muted-foreground mb-6">
           管理者・従業員・閲覧者のアカウントの一覧・編集と、新規作成ができます。閲覧者はこのページにアクセスできません。
         </p>
-        <PermissionSettingsContent stores={stores} />
+        <PermissionSettingsContent
+          stores={stores}
+          currentUserId={session.user.id}
+        />
       </main>
     </div>
   );

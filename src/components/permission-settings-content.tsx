@@ -6,13 +6,23 @@ import { PermissionAccountForm } from "@/components/permission-account-form";
 
 type Store = { id: string; name: string };
 
-export function PermissionSettingsContent({ stores }: { stores: Store[] }) {
+export function PermissionSettingsContent({
+  stores,
+  currentUserId,
+}: {
+  stores: Store[];
+  currentUserId: string;
+}) {
   const [listKey, setListKey] = useState(0);
   const refresh = useCallback(() => setListKey((k) => k + 1), []);
 
   return (
     <div className="space-y-10 max-w-3xl">
-      <StaffAccountsList stores={stores} refreshKey={listKey} />
+      <StaffAccountsList
+        stores={stores}
+        refreshKey={listKey}
+        currentUserId={currentUserId}
+      />
       <div>
         <h2 className="text-lg font-semibold mb-3">新規アカウント作成</h2>
         <PermissionAccountForm stores={stores} onCreated={refresh} />

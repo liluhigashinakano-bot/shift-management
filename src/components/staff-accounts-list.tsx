@@ -45,9 +45,11 @@ function storesSummary(u: StaffRow, storeMap: Map<string, string>): string {
 export function StaffAccountsList({
   stores,
   refreshKey,
+  currentUserId,
 }: {
   stores: Store[];
   refreshKey: number;
+  currentUserId: string;
 }) {
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,6 +169,40 @@ export function StaffAccountsList({
       }
       if (!res.ok) {
         alert(payload.error ?? `更新に失敗しました（HTTP ${res.status}）`);
+        return;
+      }
+      closeEdit();
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (!editing) return;
+    if (editing.id === currentUserId) return;
+    if (
+      !confirm(
+        `「${editing.name}」のアカウントを削除しますか？\nこの操作は取り消せません。`,
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/staff-accounts/${editing.id}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const raw = await res.text();
+      let payload: { error?: string } = {};
+      try {
+        payload = JSON.parse(raw) as typeof payload;
+      } catch {
+        /* ignore */
+      }
+      if (!res.ok) {
+        alert(payload.error ?? `削除に失敗しました（HTTP ${res.status}）`);
         return;
       }
       closeEdit();
@@ -325,7 +361,7 @@ export function StaffAccountsList({
               />
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-2 border-t">
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
               <Button
                 type="button"
                 variant="outline"
@@ -333,7 +369,22 @@ export function StaffAccountsList({
               >
                 パスワードを再発行
               </Button>
+              {editing.id !== currentUserId && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={saving}
+                  onClick={() => void deleteAccount()}
+                >
+                  アカウントを削除
+                </Button>
+              )}
             </div>
+            {editing.id === currentUserId && (
+              <p className="text-xs text-muted-foreground">
+                ログイン中の自分は削除できません。
+              </p>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={closeEdit}>
