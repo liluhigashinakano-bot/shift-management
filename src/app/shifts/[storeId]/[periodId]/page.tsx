@@ -120,7 +120,7 @@ export default async function ShiftPage({
   const isAdmin = (session.user as any).role === "admin" || (session.user as any).role === "employee";
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh shift-sheet-print-page">
       <NavHeader
         user={{
           name: session.user.name,
@@ -129,7 +129,7 @@ export default async function ShiftPage({
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="mb-4 min-w-0 print:hidden">
+        <div className="shift-sheet-toolbar-print-hide mb-4 min-w-0 print:hidden">
         <div className="flex items-center gap-1 sm:gap-2 flex-nowrap overflow-x-auto max-w-full pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
           <Link
             href="/dashboard"

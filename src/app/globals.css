@@ -161,6 +161,12 @@
     display: none !important;
   }
 
+  /* シフト表ページ：←ダッシュボード・店名・締切・他画面リンクの行（Tailwind の print:hidden が効かない環境向け） */
+  .shift-sheet-print-page header,
+  .shift-sheet-toolbar-print-hide {
+    display: none !important;
+  }
+
   /* 背景色を印刷に反映 */
   * {
     -webkit-print-color-adjust: exact !important;

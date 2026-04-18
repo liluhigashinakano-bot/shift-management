@@ -245,3 +245,14 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-04-19（シフト表印刷プレビュー：ツールバー確実に非表示）
+
+**概要:** `print:hidden` だけではプレビューにツールバーが残る環境があるため、ツールバーに `shift-sheet-toolbar-print-hide` を付与し、`@media print` で `display: none !important`。ルートに `shift-sheet-print-page` を付与し、同ページの `header` を明示。
+
+**変更ファイル（主なもの）:**
+- `src/app/shifts/[storeId]/[periodId]/page.tsx`
+- `src/app/globals.css`
+- `docs/WORK_LOG.md`
+
+---
