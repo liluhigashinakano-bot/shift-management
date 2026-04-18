@@ -208,3 +208,15 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-04-18（PDF：画像だけのページを減らす）
+
+**概要:** `print-manual-pdf.mjs` の印刷 CSS で `.manual-sheet` の `page-break-inside: avoid` をやめ、セクション内改ページを許可。本文・リスト・見出し直後の `p:has(img)` に `break-before: avoid` を指定。画像 `max-height` を 46vh に。`USER_MANUAL.pdf` / `CAST_MANUAL.pdf` を再生成。
+
+**変更ファイル（主なもの）:**
+- `scripts/print-manual-pdf.mjs`
+- `docs/manual-images/README.md`
+- `docs/*.pdf`
+- `docs/WORK_LOG.md`
+
+---

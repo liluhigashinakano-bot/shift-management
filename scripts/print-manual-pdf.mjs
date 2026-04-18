@@ -11,8 +11,8 @@ import { execFileSync } from "node:child_process";
 import { marked } from "marked";
 
 /**
- * 各 ##（h2）ブロックを 1 枚の「シート」としてまとめ、見出し〜本文〜画像が
- * 別ページにばらけにくいように HTML で包む（印刷 CSS と併用）。
+ * 各 ##（h2）ブロックを section で包み、印刷時は「本文と画像が離れにくい」よう CSS で調整する。
+ * （セクション全体を 1 ページに固定しない。固定すると画像だけのページが増えやすい。）
  */
 function wrapManualSheets(html) {
   const parts = html.split(/(?=<h2\b[^>]*>)/i);
@@ -65,34 +65,49 @@ const html = `<!DOCTYPE html>
   @media print {
     body { margin: 0; padding: 0 2mm; }
     a { color: inherit; text-decoration: none; }
-    /* 冒頭（表紙〜目次前）をできるだけまとめる */
     .manual-preface {
       page-break-after: auto;
-      break-inside: avoid-page;
+      break-inside: auto;
     }
-    /* 各「項目」（h2 単位）＝ 1 シート */
+    /* セクション内は改ページ可（全体 avoid だと「画像だけ次ページ」が起きやすい） */
     .manual-sheet {
-      page-break-inside: avoid;
-      break-inside: avoid-page;
-      margin: 0 0 10mm 0;
+      page-break-inside: auto;
+      break-inside: auto;
+      margin: 0 0 8mm 0;
       padding: 0;
     }
     .manual-sheet h2 {
       page-break-after: avoid;
       break-after: avoid-page;
     }
+    /* 見出しの直後に続く本文を、見出しの孤立を防ぐ */
+    .manual-sheet h2 + p {
+      page-break-before: avoid;
+      break-before: avoid;
+    }
+    /* 直前のブロックと「画像だけの段落」を同じページに寄せる */
+    .manual-sheet p:not(:has(img)) + p:has(img),
+    .manual-sheet h2 + p:has(img),
+    .manual-sheet ul + p:has(img),
+    .manual-sheet ol + p:has(img),
+    .manual-sheet blockquote + p:has(img),
+    .manual-sheet table + p:has(img) {
+      page-break-before: avoid;
+      break-before: avoid-page;
+    }
     .manual-sheet p,
     .manual-sheet li {
       orphans: 2;
       widows: 2;
     }
+    .manual-sheet p:has(img) {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
     img {
       page-break-inside: avoid;
       break-inside: avoid;
-      page-break-before: avoid;
-      break-before: avoid-page;
-      /* 1 ページに収めやすいよう高さを抑える（スクショ中心） */
-      max-height: 52vh;
+      max-height: 46vh;
       max-width: 100%;
       width: auto;
     }
