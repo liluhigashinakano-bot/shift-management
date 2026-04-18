@@ -28,9 +28,9 @@ function requireStaffWrite(session: any) {
   return { ok: true as const, role };
 }
 
-function generatePassword(): string {
-  // 見せやすく入力しやすい長さ
-  return crypto.randomBytes(9).toString("base64url"); // 12 chars前後
+/** キャスト追加・再発行と同じ6桁数字PIN */
+function generateCastPin(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
 // GET: キャスト一覧取得
@@ -206,7 +206,7 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
     if (!id) {
       return NextResponse.json({ error: "id が必要です" }, { status: 400 });
     }
-    const password = generatePassword();
+    const password = generateCastPin();
     const cast = await prisma.user.update({
       where: { id },
       data: { passwordHash: hashSync(password, 10) },

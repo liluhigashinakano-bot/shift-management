@@ -27,3 +27,11 @@ export function generateStrongPassword(length = 20): string {
   }
   return chars.join("");
 }
+
+/** キャストログイン用の6桁数字（先頭ゼロ埋め）。 */
+export function generateCastPin(): string {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  const n = buf[0]! % 1_000_000;
+  return String(n).padStart(6, "0");
+}

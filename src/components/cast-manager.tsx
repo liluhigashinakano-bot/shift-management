@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
-import { generateStrongPassword } from "@/lib/generate-strong-password";
+import { generateCastPin } from "@/lib/generate-strong-password";
 
 type Cast = {
   id: string;
@@ -54,7 +54,7 @@ export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
   const openAdd = () => {
     setName("");
     setCastLoginId("");
-    setPassword(generateStrongPassword());
+    setPassword(generateCastPin());
     setStoreId(selectedStore);
     setAddModal(true);
   };
@@ -98,7 +98,7 @@ export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
         return;
       }
       setAddModal(false);
-      setPassword(generateStrongPassword());
+      setPassword(generateCastPin());
       setPasswordModal({
         castLoginId: loginIdCopy,
         password: passwordCopy,
@@ -221,13 +221,14 @@ export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
           <button
             type="button"
             className="text-xs text-purple-600 hover:text-purple-800"
-            onClick={() => setPassword(generateStrongPassword())}
+            onClick={() => setPassword(generateCastPin())}
           >
             別のパスワードを生成
           </button>
         </div>
         <Input
           type="text"
+          inputMode="numeric"
           className="font-mono text-sm"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -236,7 +237,7 @@ export function CastManager({ initialCasts, stores, readOnly = false }: Props) {
           spellCheck={false}
         />
         <p className="text-xs text-gray-500">
-          英大文字・小文字・数字・記号を含む 20 文字前後を自動生成しています。必要に応じて編集できます。
+          6桁の数字を自動生成しています。必要に応じて編集できます。
         </p>
       </div>
     </div>
