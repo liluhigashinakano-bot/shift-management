@@ -256,3 +256,14 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-04-19（シフト表印刷：1〜8日チャンクを1ページに収める）
+
+**概要:** 表最小幅が横向き印字幅を超え列（メモ列含む）が次ページに分割されていたため、日付チャンクに `shift-print-chunk` を付与し印刷時 `zoom: 0.74` で縮小。`page-break-inside: avoid` と `tbody.shift-print-summary-tbody` のまとまり維持。`shift-print-grid-root` でチャンク間の `space-y` を印刷時オフ。
+
+**変更ファイル（主なもの）:**
+- `src/components/shift-grid/shift-grid.tsx`
+- `src/components/shift-grid/shift-print-styles.tsx`
+- `docs/WORK_LOG.md`
+
+---

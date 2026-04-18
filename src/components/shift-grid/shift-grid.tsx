@@ -270,14 +270,17 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="shift-print-grid-root space-y-8">
       <ShiftPrintStyles />
       {weeks.map((week, weekIdx) => {
         const weekDays = padWeek(week);
         return (
         <div
           key={weekIdx}
-          className={cn(weekIdx < weeks.length - 1 && "shift-print-chunk-break")}
+          className={cn(
+            "shift-print-chunk",
+            weekIdx < weeks.length - 1 && "shift-print-chunk-break",
+          )}
         >
           {/* 営業情報ボタン行（テーブルの外） */}
           <div
@@ -304,7 +307,7 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
             ))}
           </div>
           <div
-            className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm"
+            className="shift-print-table-shell overflow-x-auto rounded-lg border border-gray-300 shadow-sm"
             style={{ minWidth: `${TABLE_MIN_WIDTH}px` }}
           >
           <table className="border-collapse text-xs w-full" style={{ tableLayout: "fixed" }}>
@@ -562,7 +565,8 @@ export function ShiftGrid({ initialData, allCasts }: Props) {
                   </tr>
                 );
               })}
-
+            </tbody>
+            <tbody className="shift-print-summary-tbody">
               {/* 集計1行目: 予算 | 時間 | 社員 */}
               <tr className="bg-emerald-50 border-t-[3px] border-gray-500">
                 <td className="border-r-[3px] border-gray-500 px-0.5 py-0.5 text-[7px] sticky left-0 bg-emerald-50 z-10 whitespace-nowrap">
