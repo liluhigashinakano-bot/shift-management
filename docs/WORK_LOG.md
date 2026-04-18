@@ -186,3 +186,14 @@
 - `scripts/print-manual-pdf.mjs`, `package.json`
 
 ---
+
+### 2026-04-18（PDF レイアウト：項目とスクショを同じシートに）
+
+**概要:** `print-manual-pdf.mjs` で Markdown 変換後の HTML を各 `h2` 単位で `<section class="manual-sheet">` に包み、印刷時に `page-break-inside: avoid` と画像の `max-height` を指定。`USER_MANUAL.pdf` / `CAST_MANUAL.pdf` を再生成。
+
+**変更ファイル（主なもの）:**
+- `scripts/print-manual-pdf.mjs`
+- `docs/manual-images/README.md`
+- `docs/*.pdf`
+
+---
