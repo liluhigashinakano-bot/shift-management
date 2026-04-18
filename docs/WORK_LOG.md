@@ -153,3 +153,24 @@
 **Git:** コミット `258dab6` / `main`
 
 ---
+
+### 2026-04-17（利用マニュアル）
+
+**概要:** 初心者向けの利用手引き `docs/USER_MANUAL.md` を新規作成。実スクショ差し替え用に `docs/manual-images/README.md`（推奨ファイル名一覧）を追加。本文では「画面のイメージ」枠で見どころを文章化。
+
+**変更ファイル（主なもの）:**
+- `docs/USER_MANUAL.md`
+- `docs/manual-images/README.md`
+
+---
+
+### 2026-04-18（マニュアル画像の埋め込み）
+
+**概要:** ユーザー提供のスクショを `docs/manual-images/` に短いファイル名でコピーし、`USER_MANUAL.md` に `![](manual-images/...)` で埋め込み。§11 にキャスト・店舗の操作手順を追記。
+
+**変更ファイル（主なもの）:**
+- `docs/manual-images/*.png`（14 ファイル）
+- `docs/USER_MANUAL.md`
+- `docs/manual-images/README.md`
+
+---

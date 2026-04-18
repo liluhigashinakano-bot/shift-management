@@ -17,7 +17,8 @@
     "test:google-form-config": "npx tsx src/lib/google-form-config.test.ts",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:push": "npx prisma db push",
-    "db:reset": "npx prisma migrate reset --force"
+    "db:reset": "npx prisma migrate reset --force",
+    "docs:pdf": "node scripts/print-manual-pdf.mjs"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
@@ -51,6 +52,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
+    "marked": "^15.0.12",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
