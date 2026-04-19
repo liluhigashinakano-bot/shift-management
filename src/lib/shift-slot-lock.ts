@@ -27,3 +27,24 @@ export async function assertShiftSlotsUnlocked(periodId: string) {
   }
   return null;
 }
+
+/** 管理者・従業員向け: シフト確定ロックのみチェック（希望/表の締切は対象外） */
+export async function assertStaffShiftPeriodNotFinalized(periodId: string) {
+  const p = await prisma.shiftPeriod.findUnique({
+    where: { id: periodId },
+    select: { adjustmentConfirmedPublished: true },
+  });
+  if (!p) {
+    return NextResponse.json({ error: "期間が見つかりません" }, { status: 404 });
+  }
+  if (p.adjustmentConfirmedPublished) {
+    return NextResponse.json(
+      {
+        error:
+          "シフト確定ロック中のため変更できません（「シフトロック中」ボタンで解除してください）",
+      },
+      { status: 403 },
+    );
+  }
+  return null;
+}

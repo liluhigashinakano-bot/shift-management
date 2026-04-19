@@ -28,7 +28,7 @@ export function ShiftPeriodLocksPanel({
     setSlotLocked(initialSlotsLocked);
   }, [initialSlotsLocked]);
 
-  /** 両方とも未締切のときだけ true（このときクリックで希望＋表の両方を締め切る） */
+  /** 両方とも未締切のときだけ true（このときクリックでキャスト向けに希望＋表反映を締め切る） */
   const bothUnlocked = !reqLocked && !slotLocked;
   const anyLocked = reqLocked || slotLocked;
 
@@ -71,8 +71,8 @@ export function ShiftPeriodLocksPanel({
       variant={anyLocked ? "outline" : "default"}
       title={
         bothUnlocked
-          ? "シフト希望の登録・取り込みと、シフト表の追加・変更・取り込みをまとめて締め切ります。"
-          : "希望締切とシフト表の追加変更締切の両方を解除します。"
+          ? "キャスト本人のシフト希望の登録・変更と、それに伴うシフト表への反映を締め切ります。管理者・従業員のシフト表の編集や取り込みはそのまま行えます。"
+          : "キャスト向けの希望締切とシフト表反映の締切をまとめて解除します。"
       }
       className={
         anyLocked

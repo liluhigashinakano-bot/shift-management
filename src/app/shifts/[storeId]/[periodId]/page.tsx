@@ -243,9 +243,7 @@ export default async function ShiftPage({
             {isAdmin && (
               <SyncButtons
                 periodId={periodId}
-                sheetsImportDisabled={Boolean(
-                  period.shiftSlotsLocked || period.adjustmentConfirmedPublished,
-                )}
+                sheetsImportDisabled={Boolean(period.adjustmentConfirmedPublished)}
               />
             )}
           </div>
@@ -263,6 +261,7 @@ export default async function ShiftPage({
             store: c.store,
           }))}
           readOnly={isViewer}
+          bypassShiftPeriodLocks={isAdmin}
         />
       </main>
     </div>

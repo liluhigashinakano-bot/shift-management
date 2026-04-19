@@ -126,12 +126,23 @@ export default async function RequestsPage({
   const periodIdSet = new Set<string>([periodId, ...allRequests.map((r) => r.periodId)]);
   const lockRows = await prisma.shiftPeriod.findMany({
     where: { id: { in: [...periodIdSet] } },
-    select: { id: true, shiftRequestsLocked: true, adjustmentConfirmedPublished: true },
+    select: {
+      id: true,
+      shiftRequestsLocked: true,
+      shiftSlotsLocked: true,
+      adjustmentConfirmedPublished: true,
+    },
   });
   const periodLocks = Object.fromEntries(
     lockRows.map((x) => [
       x.id,
-      Boolean(x.shiftRequestsLocked || x.adjustmentConfirmedPublished),
+      role === "cast"
+        ? Boolean(
+            x.shiftRequestsLocked ||
+              x.shiftSlotsLocked ||
+              x.adjustmentConfirmedPublished,
+          )
+        : Boolean(x.adjustmentConfirmedPublished),
     ]),
   );
 
@@ -185,11 +196,7 @@ export default async function RequestsPage({
               <FormImportButton
                 periodId={periodId}
                 sheetsConfigured={sheetsOk}
-                disabled={
-                  period.shiftRequestsLocked ||
-                  period.shiftSlotsLocked ||
-                  period.adjustmentConfirmedPublished
-                }
+                disabled={period.adjustmentConfirmedPublished}
               />
               )}
             </div>

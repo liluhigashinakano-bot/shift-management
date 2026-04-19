@@ -55,7 +55,8 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
 
   const lockedForPeriod = (periodId: string) => {
     const p = periods.find((x) => x.id === periodId);
-    return Boolean(p?.shiftRequestsLocked || p?.adjustmentConfirmedPublished);
+    // マイページは管理者・従業員向け。キャスト向けの希望締切はシフト表の操作には影響しないのと同様、ここでは確定ロックのみ制限する
+    return Boolean(p?.adjustmentConfirmedPublished);
   };
 
   // 追加

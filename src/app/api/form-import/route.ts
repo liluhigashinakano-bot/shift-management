@@ -3,8 +3,7 @@ import { prisma } from "@/lib/db";
 import { readSheet, isSheetsConfigured } from "@/lib/google-sheets";
 import { auth } from "@/lib/auth";
 import { normalizeSheetDateToYmd } from "@/lib/sheet-date";
-import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
-import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
+import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 
 function requireStaff(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -43,10 +42,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Period not found" }, { status: 404 });
   }
 
-  const lockedRes = await assertShiftRequestsUnlocked(periodId);
-  if (lockedRes) return lockedRes;
-  const slotLockedRes = await assertShiftSlotsUnlocked(periodId);
-  if (slotLockedRes) return slotLockedRes;
+  const staffLock = await assertStaffShiftPeriodNotFinalized(periodId);
+  if (staffLock) return staffLock;
 
   try {
     // Googleフォームの回答シートを読み取り

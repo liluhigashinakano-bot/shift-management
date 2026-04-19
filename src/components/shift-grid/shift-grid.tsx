@@ -67,6 +67,8 @@ type Props = {
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   /** 閲覧者など: 編集・追加・ドラッグ不可（締切と同様の扱い） */
   readOnly?: boolean;
+  /** 管理者・従業員: キャスト向けの希望/表の締切は無視（シフト確定ロックと readOnly のみ制限） */
+  bypassShiftPeriodLocks?: boolean;
 };
 
 type EditTarget = {
@@ -155,7 +157,12 @@ function periodLockSignature(p: Period): string {
   ].join("|");
 }
 
-export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
+export function ShiftGrid({
+  initialData,
+  allCasts,
+  readOnly = false,
+  bypassShiftPeriodLocks = false,
+}: Props) {
   const [data, setData] = useState(initialData);
   const lockSigRef = useRef(periodLockSignature(initialData));
 
@@ -186,10 +193,10 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
   }, [data.id]);
 
   const periodShiftConfirmed = Boolean(data.adjustmentConfirmedPublished);
-  const slotsLocked =
-    Boolean(data.shiftSlotsLocked) || periodShiftConfirmed || readOnly;
-  const addShiftBlocked =
-    Boolean(data.shiftRequestsLocked) || slotsLocked;
+  const effectiveReqLocked = bypassShiftPeriodLocks ? false : Boolean(data.shiftRequestsLocked);
+  const effectiveSlotLocked = bypassShiftPeriodLocks ? false : Boolean(data.shiftSlotsLocked);
+  const slotsLocked = effectiveSlotLocked || periodShiftConfirmed || readOnly;
+  const addShiftBlocked = effectiveReqLocked || slotsLocked;
 
   const handleCastClick = (day: ShiftDay, castId: string, castName: string) => {
     if (slotsLocked) return;
@@ -301,12 +308,12 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
         "シフト確定ロック中です。ツールバーの「シフトロック中」をクリックすると解除され、編集・追加ができるようになります。",
       );
     }
-    if (Boolean(data.shiftRequestsLocked)) {
+    if (effectiveReqLocked) {
       blockReasons.push(
         "シフト希望が締切です。「締切を解除」で希望とシフト表の追加変更の締切をまとめて外せます。",
       );
     }
-    if (Boolean(data.shiftSlotsLocked) && !periodShiftConfirmed) {
+    if (effectiveSlotLocked && !periodShiftConfirmed) {
       blockReasons.push("シフト表の追加・変更が締切です。「締切を解除」で外せます。");
     }
   }
@@ -797,8 +804,8 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
           existingSlots={
             data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => s.castId) ?? []
           }
-          shiftRequestsLocked={Boolean(data.shiftRequestsLocked)}
-          shiftSlotsLocked={Boolean(data.shiftSlotsLocked)}
+          shiftRequestsLocked={effectiveReqLocked}
+          shiftSlotsLocked={effectiveSlotLocked}
           periodShiftConfirmed={periodShiftConfirmed}
           onClose={() => setAddDialog(null)}
           onSaved={reload}
@@ -815,7 +822,7 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
           currentEnd={editTarget.currentEnd}
           memo={editTarget.memo}
           periodId={data.id}
-          shiftSlotsLocked={Boolean(data.shiftSlotsLocked)}
+          shiftSlotsLocked={effectiveSlotLocked}
           periodShiftConfirmed={periodShiftConfirmed}
           onClose={() => setEditTarget(null)}
           onSaved={reload}

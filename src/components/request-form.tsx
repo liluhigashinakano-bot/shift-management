@@ -227,7 +227,9 @@ export function RequestForm({
     <div className="space-y-4">
       {currentLocked && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-          この店舗・期間のシフト希望は締め切り、またはシフト確定済みのため登録・削除はできません（解除はシフト表画面の「締め切り解除」または「シフトロック中」ボタンから）。
+          {canEditStaff
+            ? "シフト確定ロック中のため、希望の登録・編集・削除はできません（解除はシフト表画面の「シフトロック中」ボタンから）。"
+            : "この店舗・期間のシフト希望は締め切り、またはシフト確定済みのため登録・削除はできません（解除はシフト表画面の「締め切り解除」または「シフトロック中」ボタンから）。"}
         </p>
       )}
       <div className="flex items-center gap-3">
@@ -351,7 +353,9 @@ export function RequestForm({
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             {modalLocked && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                この希望の期間は締め切りのため変更・削除できません。
+                {canEditStaff
+                  ? "この希望の期間はシフト確定ロック中のため変更・削除できません。"
+                  : "この希望の期間は締め切りのため変更・削除できません。"}
               </p>
             )}
             {canEditStaff && (

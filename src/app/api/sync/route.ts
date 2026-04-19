@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { syncToSheets, syncFromSheets } from "@/lib/sheet-sync";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { auth } from "@/lib/auth";
-import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
+import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 
 function requireStaff(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (direction === "fromSheets") {
-    const slotLock = await assertShiftSlotsUnlocked(periodId);
+    const slotLock = await assertStaffShiftPeriodNotFinalized(periodId);
     if (slotLock) return slotLock;
     const result = await syncFromSheets(periodId);
     return NextResponse.json(result);

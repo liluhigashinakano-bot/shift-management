@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
-import { assertShiftSlotsUnlocked } from "@/lib/shift-slot-lock";
+import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -149,10 +148,8 @@ export async function POST(req: NextRequest) {
     if (!dayForLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
-    const lockRes = await assertShiftRequestsUnlocked(dayForLock.periodId);
+    const lockRes = await assertStaffShiftPeriodNotFinalized(dayForLock.periodId);
     if (lockRes) return lockRes;
-    const slotLockRes = await assertShiftSlotsUnlocked(dayForLock.periodId);
-    if (slotLockRes) return slotLockRes;
 
     const slots = [];
 
@@ -209,7 +206,7 @@ export async function POST(req: NextRequest) {
     if (!dayForSlotLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
-    const slotLockRm = await assertShiftSlotsUnlocked(dayForSlotLock.periodId);
+    const slotLockRm = await assertStaffShiftPeriodNotFinalized(dayForSlotLock.periodId);
     if (slotLockRm) return slotLockRm;
 
     // 削除前に元の時間を記録
@@ -252,7 +249,7 @@ export async function POST(req: NextRequest) {
     if (!dayForEditLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
-    const slotLockEd = await assertShiftSlotsUnlocked(dayForEditLock.periodId);
+    const slotLockEd = await assertStaffShiftPeriodNotFinalized(dayForEditLock.periodId);
     if (slotLockEd) return slotLockEd;
 
     // 元の時間を取得
@@ -311,7 +308,7 @@ export async function POST(req: NextRequest) {
     const { timeSlot, memo } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
-    const slotMemoLock = await assertShiftSlotsUnlocked(day.periodId);
+    const slotMemoLock = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (slotMemoLock) return slotMemoLock;
 
     // notesフィールドにJSON形式で管理者メモを保存: {"slotMemos":{"20":"メモ内容",...}, "text":"通常備考"}
@@ -335,7 +332,7 @@ export async function POST(req: NextRequest) {
     const { text } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
-    const lockNotes = await assertShiftSlotsUnlocked(day.periodId);
+    const lockNotes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockNotes) return lockNotes;
 
     let parsed: any = {};
@@ -359,7 +356,7 @@ export async function POST(req: NextRequest) {
     if (!dayForUpdate) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
-    const lockDay = await assertShiftSlotsUnlocked(dayForUpdate.periodId);
+    const lockDay = await assertStaffShiftPeriodNotFinalized(dayForUpdate.periodId);
     if (lockDay) return lockDay;
     await prisma.shiftDay.update({
       where: { id: dayId },
