@@ -227,7 +227,7 @@ export function RequestForm({
     <div className="space-y-4">
       {currentLocked && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-          この店舗・期間のシフト希望は締め切りです。登録・削除はできません（解除はシフト表画面の「締め切り解除」から）。
+          この店舗・期間のシフト希望は締め切り、またはシフト確定済みのため登録・削除はできません（解除はシフト表画面の「締め切り解除」または「シフトを編集する」から）。
         </p>
       )}
       <div className="flex items-center gap-3">

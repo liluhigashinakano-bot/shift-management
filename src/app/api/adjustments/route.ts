@@ -51,6 +51,19 @@ export async function POST(req: NextRequest) {
 
   if (action === "create") {
     const { dayId, castId, originalStart, originalEnd, adjustedStart, adjustedEnd, adjustAction, reason } = body;
+    const dayRow = await prisma.shiftDay.findUnique({
+      where: { id: dayId as string },
+      select: { period: { select: { adjustmentConfirmedPublished: true } } },
+    });
+    if (!dayRow) {
+      return NextResponse.json({ error: "日が見つかりません" }, { status: 404 });
+    }
+    if (dayRow.period.adjustmentConfirmedPublished) {
+      return NextResponse.json(
+        { error: "シフト確定済みのため調整記録を追加できません（「シフトを編集する」で解除してください）" },
+        { status: 403 },
+      );
+    }
     const adj = await prisma.shiftAdjustment.create({
       data: {
         dayId,
@@ -67,7 +80,24 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "delete") {
-    await prisma.shiftAdjustment.delete({ where: { id: body.id } });
+    const adjId = String((body as { id?: unknown }).id ?? "").trim();
+    if (!adjId) {
+      return NextResponse.json({ error: "id が必要です" }, { status: 400 });
+    }
+    const existingAdj = await prisma.shiftAdjustment.findUnique({
+      where: { id: adjId },
+      select: { day: { select: { period: { select: { adjustmentConfirmedPublished: true } } } } },
+    });
+    if (!existingAdj) {
+      return NextResponse.json({ error: "調整が見つかりません" }, { status: 404 });
+    }
+    if (existingAdj.day.period.adjustmentConfirmedPublished) {
+      return NextResponse.json(
+        { error: "シフト確定済みのため調整記録を削除できません（「シフトを編集する」で解除してください）" },
+        { status: 403 },
+      );
+    }
+    await prisma.shiftAdjustment.delete({ where: { id: adjId } });
     return NextResponse.json({ ok: true });
   }
 

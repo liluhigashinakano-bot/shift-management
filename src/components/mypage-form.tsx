@@ -12,6 +12,7 @@ type Period = {
   month: number;
   half: string;
   shiftRequestsLocked?: boolean;
+  adjustmentConfirmedPublished?: boolean;
   store: { id: string; name: string };
   shiftDays: { id: string; date: string; dayOfWeek: string }[];
 };
@@ -52,8 +53,10 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
     if (res.ok) setRequests(await res.json());
   };
 
-  const lockedForPeriod = (periodId: string) =>
-    periods.find((p) => p.id === periodId)?.shiftRequestsLocked ?? false;
+  const lockedForPeriod = (periodId: string) => {
+    const p = periods.find((x) => x.id === periodId);
+    return Boolean(p?.shiftRequestsLocked || p?.adjustmentConfirmedPublished);
+  };
 
   // 追加
   const handleAdd = async () => {

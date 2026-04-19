@@ -18,6 +18,8 @@ type Props = {
   periodId: string;
   /** シフト表の追加・変更締切 */
   shiftSlotsLocked?: boolean;
+  /** 「シフトを確定する」後 */
+  periodShiftConfirmed?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -39,9 +41,11 @@ export function CastEditModal({
   memo,
   periodId,
   shiftSlotsLocked = false,
+  periodShiftConfirmed = false,
   onClose,
   onSaved,
 }: Props) {
+  const sheetEditBlocked = shiftSlotsLocked || periodShiftConfirmed;
   const [mode, setMode] = useState<"menu" | "edit">("menu");
   const [newStart, setNewStart] = useState(currentStart.toString());
   const [newEnd, setNewEnd] = useState(currentEnd.toString());
@@ -79,7 +83,7 @@ export function CastEditModal({
   }, [periodId, castId, dayLabel]);
 
   const handleDelete = async () => {
-    if (shiftSlotsLocked) return;
+    if (sheetEditBlocked) return;
     setSaving(true);
     await fetch("/api/shifts", {
       method: "POST",
@@ -97,7 +101,7 @@ export function CastEditModal({
   };
 
   const handleEdit = async () => {
-    if (shiftSlotsLocked) return;
+    if (sheetEditBlocked) return;
     setSaving(true);
     await fetch("/api/shifts", {
       method: "POST",
@@ -126,6 +130,11 @@ export function CastEditModal({
           {shiftSlotsLocked && (
             <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
               シフト追加が締め切られているため、時間の変更・削除はできません。
+            </p>
+          )}
+          {periodShiftConfirmed && (
+            <p className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+              シフトが確定済みのため、時間の変更・削除はできません。シフト表の「シフトを編集する」で解除してください。
             </p>
           )}
           {/* シフト希望情報 */}
@@ -182,7 +191,7 @@ export function CastEditModal({
             variant="outline"
             className="justify-start text-blue-600 border-blue-200 hover:bg-blue-50"
             onClick={() => setMode("edit")}
-            disabled={shiftSlotsLocked}
+            disabled={sheetEditBlocked}
           >
             時間を編集
           </Button>
@@ -190,7 +199,7 @@ export function CastEditModal({
             variant="outline"
             className="justify-start text-red-600 border-red-200 hover:bg-red-50"
             onClick={handleDelete}
-            disabled={saving || shiftSlotsLocked}
+            disabled={saving || sheetEditBlocked}
           >
             {saving ? "削除中..." : "シフトを削除（カット）"}
           </Button>
@@ -226,6 +235,7 @@ export function CastEditModal({
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               value={newStart}
+              disabled={sheetEditBlocked}
               onChange={(e) => setNewStart(e.target.value)}
             >
               {TIME_SLOTS.map((s) => (
@@ -240,6 +250,7 @@ export function CastEditModal({
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               value={newEnd}
+              disabled={sheetEditBlocked}
               onChange={(e) => setNewEnd(e.target.value)}
             >
               {TIME_SLOTS.filter((s) => s > parseFloat(newStart)).map((s) => (
@@ -256,6 +267,7 @@ export function CastEditModal({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="人数調整、予算超過など"
+            disabled={sheetEditBlocked}
           />
         </div>
         <div className="flex justify-end gap-2">
@@ -264,7 +276,7 @@ export function CastEditModal({
           </Button>
           <Button
             onClick={handleEdit}
-            disabled={saving || shiftSlotsLocked}
+            disabled={saving || sheetEditBlocked}
             className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           >
             {saving ? "保存中..." : "変更を保存"}

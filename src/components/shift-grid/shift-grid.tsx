@@ -56,6 +56,8 @@ type Period = {
   shiftRequestsLocked?: boolean;
   /** true のときシフト表の追加・変更不可 */
   shiftSlotsLocked?: boolean;
+  /** true のときシフト確定済み（締切と同様に表・希望・調整系をロック） */
+  adjustmentConfirmedPublished?: boolean;
   shiftRequests?: ShiftRequestInfo[];
   helpInfo?: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]>;
 };
@@ -164,7 +166,9 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
     if (res.ok) setData(await res.json());
   }, [data.id]);
 
-  const slotsLocked = Boolean(data.shiftSlotsLocked) || readOnly;
+  const periodShiftConfirmed = Boolean(data.adjustmentConfirmedPublished);
+  const slotsLocked =
+    Boolean(data.shiftSlotsLocked) || periodShiftConfirmed || readOnly;
   const addShiftBlocked =
     Boolean(data.shiftRequestsLocked) || slotsLocked;
 
@@ -297,8 +301,16 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                 {day ? (
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center rounded border border-blue-200 bg-white px-0.5 py-0.5 text-[7px] font-medium text-blue-600 shadow-sm hover:border-blue-300 hover:bg-blue-50 whitespace-nowrap"
-                    onClick={() => setEditDay(day)}
+                    disabled={slotsLocked}
+                    className={`inline-flex items-center justify-center rounded border px-0.5 py-0.5 text-[7px] font-medium shadow-sm whitespace-nowrap ${
+                      slotsLocked
+                        ? "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                        : "border-blue-200 bg-white text-blue-600 hover:border-blue-300 hover:bg-blue-50"
+                    }`}
+                    onClick={() => {
+                      if (slotsLocked) return;
+                      setEditDay(day);
+                    }}
                   >
                     ＋営業情報
                   </button>
@@ -484,6 +496,7 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                                   style={{ ...tagColor, fontSize: `${nameFontSize}px` }}
                                   className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium leading-tight hover:brightness-90 whitespace-nowrap"
                                   onClick={() => {
+                                    if (slotsLocked) return;
                                     if (hasMemo) {
                                       const dd = new Date(day.date);
                                       setMemoView({
@@ -545,7 +558,10 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                                 style={{ ...endColor, fontSize: `${endNameFontSize}px` }}
                                 className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing leading-tight hover:brightness-90 whitespace-nowrap"
                                 title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
-                                onClick={() => handleCastClick(day, s.castId, s.cast.name)}
+                                onClick={() => {
+                                  if (slotsLocked) return;
+                                  handleCastClick(day, s.castId, s.cast.name);
+                                }}
                               >
                                 {endDisplayName}
                               </span>
@@ -590,14 +606,22 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                   const totalHours = day.shiftSlots.length * 0.5;
                   return (
                     <React.Fragment key={day.id}>
-                      <td className="px-0.5 py-0.5 text-[9px] font-bold text-emerald-800 whitespace-nowrap cursor-pointer hover:bg-emerald-100" onClick={() => setEditDay(day)}>
+                      <td
+                        className={`px-0.5 py-0.5 text-[9px] font-bold text-emerald-800 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-emerald-100"}`}
+                        onClick={() => {
+                          if (slotsLocked) return;
+                          setEditDay(day);
+                        }}
+                      >
                         {budget ? budget.toLocaleString() : "-"}
                       </td>
                       <td colSpan={2} className="px-0.5 py-0.5 text-[9px] font-bold text-sky-700 whitespace-nowrap">
                         {totalHours || "-"}
                       </td>
-                      <td className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap cursor-pointer hover:bg-purple-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      <td
+                        className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-purple-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                         onClick={() => {
+                          if (slotsLocked) return;
                           const dd = new Date(day.date);
                           setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "eventName", label: "企画名", value: day.eventName || "" });
                         }}
@@ -619,8 +643,12 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                     );
                   }
                   return (
-                    <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap cursor-pointer hover:bg-orange-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                    <td
+                      key={day.id}
+                      colSpan={4}
+                      className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-orange-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
+                        if (slotsLocked) return;
                         const dd = new Date(day.date);
                         setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "employeeOnDuty", label: "社員", value: day.employeeOnDuty || "" });
                       }}
@@ -641,8 +669,12 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                     );
                   }
                   return (
-                    <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                    <td
+                      key={day.id}
+                      colSpan={4}
+                      className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-gray-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
+                        if (slotsLocked) return;
                         const dd = new Date(day.date);
                         setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "expectedVisitors", label: "来店予定", value: day.expectedVisitors || "" });
                       }}
@@ -662,8 +694,12 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
                     );
                   }
                   return (
-                    <td key={day.id} colSpan={4} className={`px-1 py-0.5 text-[9px] text-gray-600 cursor-pointer hover:bg-gray-100 ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                    <td
+                      key={day.id}
+                      colSpan={4}
+                      className={`px-1 py-0.5 text-[9px] text-gray-600 ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-gray-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
+                        if (slotsLocked) return;
                         const dd = new Date(day.date);
                         let notesVal = "";
                         if (day.notes) { try { notesVal = JSON.parse(day.notes).text || ""; } catch { notesVal = day.notes; } }
@@ -716,7 +752,8 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
             data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => s.castId) ?? []
           }
           shiftRequestsLocked={Boolean(data.shiftRequestsLocked)}
-          shiftSlotsLocked={slotsLocked}
+          shiftSlotsLocked={Boolean(data.shiftSlotsLocked)}
+          periodShiftConfirmed={periodShiftConfirmed}
           onClose={() => setAddDialog(null)}
           onSaved={reload}
         />
@@ -732,7 +769,8 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
           currentEnd={editTarget.currentEnd}
           memo={editTarget.memo}
           periodId={data.id}
-          shiftSlotsLocked={slotsLocked}
+          shiftSlotsLocked={Boolean(data.shiftSlotsLocked)}
+          periodShiftConfirmed={periodShiftConfirmed}
           onClose={() => setEditTarget(null)}
           onSaved={reload}
         />

@@ -335,6 +335,8 @@ export async function POST(req: NextRequest) {
     const { text } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const lockNotes = await assertShiftSlotsUnlocked(day.periodId);
+    if (lockNotes) return lockNotes;
 
     let parsed: any = {};
     if (day.notes) {
@@ -350,6 +352,15 @@ export async function POST(req: NextRequest) {
 
   if (action === "updateDay") {
     const { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty } = body;
+    const dayForUpdate = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { periodId: true },
+    });
+    if (!dayForUpdate) {
+      return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    }
+    const lockDay = await assertShiftSlotsUnlocked(dayForUpdate.periodId);
+    if (lockDay) return lockDay;
     await prisma.shiftDay.update({
       where: { id: dayId },
       data: { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty },

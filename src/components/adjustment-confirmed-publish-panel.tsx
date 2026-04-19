@@ -49,7 +49,7 @@ export function AdjustmentConfirmedPublishPanel({
       variant={published ? "outline" : "default"}
       title={
         published
-          ? "調整一覧の「確定」列を非表示に戻します（希望列のみの状態）。"
+          ? "調整一覧の「確定」列を隠し、希望列のみの表示に戻します（シフト表の編集・調整に戻るイメージ）。"
           : "調整一覧の「確定」列に、現在のシフト表（調整反映後）を表示します。"
       }
       className={
@@ -63,7 +63,7 @@ export function AdjustmentConfirmedPublishPanel({
         void setPublishedApi(!published);
       }}
     >
-      {loading ? "…" : published ? "確定表示を隠す" : "シフトを確定する"}
+      {loading ? "…" : published ? "シフトを編集する" : "シフトを確定する"}
     </Button>
   );
 }

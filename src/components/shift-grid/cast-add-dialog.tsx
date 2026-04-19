@@ -17,6 +17,8 @@ type Props = {
   shiftRequestsLocked?: boolean;
   /** true のときシフト表の追加締切のため追加不可 */
   shiftSlotsLocked?: boolean;
+  /** 「シフトを確定する」後（締切とは別） */
+  periodShiftConfirmed?: boolean;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -29,6 +31,7 @@ export function CastAddDialog({
   existingSlots,
   shiftRequestsLocked = false,
   shiftSlotsLocked = false,
+  periodShiftConfirmed = false,
   onClose,
   onSaved,
 }: Props) {
@@ -61,7 +64,7 @@ export function CastAddDialog({
     }
   }, [tab, helpStore, allCasts, currentStoreName]);
 
-  const addBlocked = shiftRequestsLocked || shiftSlotsLocked;
+  const addBlocked = shiftRequestsLocked || shiftSlotsLocked || periodShiftConfirmed;
 
   const handleSave = async () => {
     if (!castId || addBlocked) return;
@@ -96,6 +99,11 @@ export function CastAddDialog({
         {shiftSlotsLocked && (
           <p className="text-sm text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
             シフト追加が締め切られているため、ここからの追加はできません。「シフト追加締切を解除」後に再度お試しください。
+          </p>
+        )}
+        {periodShiftConfirmed && (
+          <p className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+            シフトが確定済みのため、ここからの追加はできません。シフト表の「シフトを編集する」で確定表示をオフにしてから編集してください。
           </p>
         )}
         {/* タブ切り替え */}
