@@ -7,7 +7,8 @@ import { SyncButtons } from "@/components/sync-buttons";
 import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
 import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirmed-publish-panel";
 import Link from "next/link";
-import { assertStorePageAccess } from "@/lib/store-access";
+import { assertStorePageAccess, getAccessibleStoreIds } from "@/lib/store-access";
+import { ShiftSheetStoreTitle } from "@/components/shift-sheet-store-title";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,60 @@ export default async function ShiftPage({
   }
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
+
+  const accessible = getAccessibleStoreIds(session.user as any);
+  let storeOptions: { id: string; name: string; periodId: string | null }[];
+  if (accessible === null) {
+    const stores = await prisma.store.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    const periodRows = await prisma.shiftPeriod.findMany({
+      where: {
+        year: period.year,
+        month: period.month,
+        half: period.half,
+        storeId: { in: stores.map((s) => s.id) },
+      },
+      select: { id: true, storeId: true },
+    });
+    const pidByStore = new Map(periodRows.map((r) => [r.storeId, r.id]));
+    storeOptions = stores.map((s) => ({
+      id: s.id,
+      name: s.name,
+      periodId: pidByStore.get(s.id) ?? null,
+    }));
+  } else if (accessible.length > 1) {
+    const stores = await prisma.store.findMany({
+      where: { id: { in: accessible } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    const periodRows = await prisma.shiftPeriod.findMany({
+      where: {
+        year: period.year,
+        month: period.month,
+        half: period.half,
+        storeId: { in: stores.map((s) => s.id) },
+      },
+      select: { id: true, storeId: true },
+    });
+    const pidByStore = new Map(periodRows.map((r) => [r.storeId, r.id]));
+    storeOptions = stores.map((s) => ({
+      id: s.id,
+      name: s.name,
+      periodId: pidByStore.get(s.id) ?? null,
+    }));
+  } else {
+    storeOptions = [
+      {
+        id: period.storeId,
+        name: period.store.name,
+        periodId: period.id,
+      },
+    ];
+  }
+
   const isAdmin =
     (session.user as any).role === "admin" ||
     (session.user as any).role === "employee";
@@ -146,9 +201,13 @@ export default async function ShiftPage({
           >
             &larr; ダッシュボード
           </Link>
-          <h1 className="text-[11px] sm:text-base md:text-xl font-bold shrink-0 whitespace-nowrap">
-            {period.store.name}‐{period.year}年{period.month}月{halfLabel}
-          </h1>
+          <ShiftSheetStoreTitle
+            currentStoreId={storeId}
+            year={period.year}
+            month={period.month}
+            halfLabel={halfLabel}
+            storeOptions={JSON.parse(JSON.stringify(storeOptions))}
+          />
           {isAdmin && (
             <div className="shrink-0 flex flex-wrap items-center gap-1">
               <ShiftPeriodLocksPanel
