@@ -275,7 +275,9 @@ export function ShiftGrid({
       newStart = targetSlot;
       if (newStart >= newEnd) { setDragging(null); return; } // 無効
     } else {
-      newEnd = targetSlot + 0.5;
+      // 退勤: 行の timeSlot は「その行の開始時刻」＝ここまで勤務したら終了する境界（API の newEnd と同じ）
+      // targetSlot+0.5 だと 24:30 行(24.5)→25:00・25:30 行(25.5)→26:00 となり誤配置・無変更になる
+      newEnd = targetSlot;
       if (newEnd <= newStart) { setDragging(null); return; } // 無効
     }
 
