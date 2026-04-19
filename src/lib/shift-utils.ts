@@ -15,8 +15,8 @@ export function hideEndCastNameForWishEnd29(endTime: number): boolean {
 
 /**
  * 退勤キャスト名を出す行の timeSlot（TIME_SLOTS の要素と一致）。
- * 退勤時刻が整数時（例 20:00, 24:00）のときはその :00 行（timeSlot = 時）に表示する。
- * 半時（例 20:30, 24:30）のときは従来どおり isEnd が付いている行（最後の勤務スロット）に合わせる。
+ * 退勤の排他終端（最後の勤務スロットの終了時刻 = last.timeSlot + 0.5）と同じ行に置く。
+ * 例: 25:30 終了 → 25.5 行（:30）、25:00 終了 → 25 行（:00）。旧実装は :30 終了でも最後のスロット開始行に置き表とモーダルが食い違った。
  */
 export function displaySlotForClockOut(
   daySlots: { timeSlot: number; castId: string }[],
@@ -27,9 +27,7 @@ export function displaySlotForClockOut(
     .sort((a, b) => a.timeSlot - b.timeSlot);
   if (castSlots.length === 0) return null;
   const last = castSlots[castSlots.length - 1];
-  const clockOutEnd = last.timeSlot + 0.5;
-  if (clockOutEnd % 1 === 0) return clockOutEnd;
-  return last.timeSlot;
+  return last.timeSlot + 0.5;
 }
 
 // 日付を "M/D" 形式に
