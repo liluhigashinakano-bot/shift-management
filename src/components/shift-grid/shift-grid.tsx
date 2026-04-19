@@ -147,6 +147,21 @@ function chunkShiftDaysByCalendarPrint(days: ShiftDay[]): ShiftDay[][] {
   return chunks;
 }
 
+/** 出勤・退勤列（46px）内に収めるタグ用フォントサイズ。文字数と同一スロット人数で縮小 */
+function castNameTagFontSizePx(displayName: string, namesInCell: number): number {
+  const chars = Array.from(displayName).length;
+  if (chars < 1) return 9;
+  const colInner = 42; // 46px 列 − セル内 div の横パディング目安
+  const gap = 2; // タグ間 mr-0.5
+  const n = Math.max(1, namesInCell);
+  const widthPerTag = (colInner - gap * Math.max(0, n - 1)) / n;
+  // 表示側: 5文字超は px-0.5、それ以下は px-1
+  const spanPad = chars > 4 ? 4 : 8;
+  const textWidth = Math.max(10, widthPerTag - spanPad);
+  const raw = Math.floor((textWidth / chars) * 1.22);
+  return Math.max(4, Math.min(10, raw));
+}
+
 /** サーバーから変わったときだけ grid state を差し替える（ロック解除後の再描画用） */
 function periodLockSignature(p: Period): string {
   return [
@@ -519,7 +534,8 @@ export function ShiftGrid({
                               const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
                               const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
                               const castCount = startCasts.length;
-                              const nameFontSize = castCount <= 1 ? 9 : castCount <= 2 ? 8 : castCount <= 3 ? 7 : 6;
+                              const nameLen = Array.from(displayName).length;
+                              const nameFontSize = castNameTagFontSizePx(displayName, castCount);
                               const hasMemo = !!s.memo;
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
@@ -546,8 +562,13 @@ export function ShiftGrid({
                                   key={s.castId}
                                   draggable={!slotsLocked}
                                   onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "start", origStart, origEnd)}
-                                  style={{ ...tagColor, fontSize: `${nameFontSize}px` }}
-                                  className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium leading-tight hover:brightness-90 whitespace-nowrap"
+                                  style={{
+                                    ...tagColor,
+                                    fontSize: `${nameFontSize}px`,
+                                    lineHeight: 1.1,
+                                    letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
+                                  }}
+                                  className={`inline-block rounded py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium hover:brightness-90 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                   onClick={() => {
                                     if (slotsLocked) return;
                                     if (hasMemo) {
@@ -586,7 +607,8 @@ export function ShiftGrid({
                               const endIsHelp = endCastInfo?.store?.name && endCastInfo.store.name !== data.store.name;
                               const endDisplayName = endIsHelp ? `${endCastInfo!.store!.name}${s.cast.name}` : s.cast.name;
                               const endCastCount = endCasts.length;
-                              const endNameFontSize = endCastCount <= 1 ? 9 : endCastCount <= 2 ? 8 : endCastCount <= 3 ? 7 : 6;
+                              const endNameLen = Array.from(endDisplayName).length;
+                              const endNameFontSize = castNameTagFontSizePx(endDisplayName, endCastCount);
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
                               const origEnd = (castSlots[castSlots.length - 1]?.timeSlot ?? slot) + 0.5;
@@ -608,8 +630,13 @@ export function ShiftGrid({
                                 key={s.castId}
                                 draggable={!slotsLocked}
                                 onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "end", origStart, origEnd)}
-                                style={{ ...endColor, fontSize: `${endNameFontSize}px` }}
-                                className="inline-block rounded px-1 py-0 mr-0.5 cursor-grab active:cursor-grabbing leading-tight hover:brightness-90 whitespace-nowrap"
+                                style={{
+                                  ...endColor,
+                                  fontSize: `${endNameFontSize}px`,
+                                  lineHeight: 1.1,
+                                  letterSpacing: endNameLen > 7 ? "-0.03em" : endNameLen > 5 ? "-0.015em" : undefined,
+                                }}
+                                className={`inline-block rounded py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:brightness-90 whitespace-nowrap ${endNameLen > 4 ? "px-0.5" : "px-1"}`}
                                 title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
                                 onClick={() => {
                                   if (slotsLocked) return;
