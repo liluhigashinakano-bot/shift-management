@@ -47,6 +47,8 @@ type Props = {
   shiftRequests: ShiftRequest[];
   adjustedCasts: Cast[];
   allCasts: Cast[];
+  /** false のとき「確定」列は空（希望列のみ比較表示） */
+  showConfirmedShiftColumn: boolean;
 };
 
 function dayHeaderBg(dow: string): string {
@@ -63,6 +65,7 @@ export function AdjustmentTable({
   shiftRequests,
   adjustedCasts,
   allCasts,
+  showConfirmedShiftColumn,
 }: Props) {
   const [selectedCast, setSelectedCast] = useState(adjustedCasts[0]?.id || "");
   const adjustments = initialAdjustments;
@@ -218,14 +221,16 @@ export function AdjustmentTable({
                           reqBg = "bg-blue-100";
                         }
 
-                        // 確定セルの色
+                        // 確定セルの色（公開後のみ）
                         let curBg = "";
-                        if (isCut) {
-                          curBg = ""; // 削除済み→空
-                        } else if (inCurrent && inRequest) {
-                          curBg = "bg-pink-100"; // 希望通り
-                        } else if (inCurrent && !inRequest) {
-                          curBg = "bg-pink-300"; // 希望外の追加/変更
+                        if (showConfirmedShiftColumn) {
+                          if (isCut) {
+                            curBg = ""; // 削除済み→空
+                          } else if (inCurrent && inRequest) {
+                            curBg = "bg-pink-100"; // 希望通り
+                          } else if (inCurrent && !inRequest) {
+                            curBg = "bg-pink-300"; // 希望外の追加/変更
+                          }
                         }
 
                         // 出勤/退勤マーク
@@ -245,10 +250,18 @@ export function AdjustmentTable({
                             </td>
                             {/* 確定セル */}
                             <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                              {isCurStart && <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>}
-                              {isCurEnd && !isCurStart && <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>}
-                              {inCurrent && !isCurStart && !isCurEnd && <span className="text-pink-300">│</span>}
-                              {isCut && inRequest && !inCurrent && <span className="text-red-400">×</span>}
+                              {showConfirmedShiftColumn && isCurStart && (
+                                <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
+                              )}
+                              {showConfirmedShiftColumn && isCurEnd && !isCurStart && (
+                                <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>
+                              )}
+                              {showConfirmedShiftColumn && inCurrent && !isCurStart && !isCurEnd && (
+                                <span className="text-pink-300">│</span>
+                              )}
+                              {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (
+                                <span className="text-red-400">×</span>
+                              )}
                             </td>
                           </React.Fragment>
                         );

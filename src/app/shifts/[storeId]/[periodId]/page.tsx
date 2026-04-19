@@ -5,6 +5,7 @@ import { NavHeader } from "@/components/nav-header";
 import { ShiftGrid } from "@/components/shift-grid/shift-grid";
 import { SyncButtons } from "@/components/sync-buttons";
 import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
+import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirmed-publish-panel";
 import Link from "next/link";
 import { assertStorePageAccess } from "@/lib/store-access";
 
@@ -147,11 +148,15 @@ export default async function ShiftPage({
             {period.store.name}‐{period.year}年{period.month}月{halfLabel}
           </h1>
           {isAdmin && (
-            <div className="shrink-0">
+            <div className="shrink-0 flex flex-wrap items-center gap-1">
               <ShiftPeriodLocksPanel
                 periodId={periodId}
                 initialRequestsLocked={Boolean(period.shiftRequestsLocked)}
                 initialSlotsLocked={Boolean(period.shiftSlotsLocked)}
+              />
+              <AdjustmentConfirmedPublishPanel
+                periodId={periodId}
+                initialPublished={Boolean(period.adjustmentConfirmedPublished)}
               />
             </div>
           )}

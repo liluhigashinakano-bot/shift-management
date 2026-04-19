@@ -64,6 +64,8 @@ model ShiftPeriod {
   shiftRequestsLocked Boolean @default(false)
   /// true のときシフト表のスロット追加・削除・時間変更・Sheets取込などを禁止（希望締切とは別）
   shiftSlotsLocked Boolean @default(false)
+  /// true のとき調整一覧の「確定」列に調整後シフトを表示（未確定時は列はあるが中身は空）
+  adjustmentConfirmedPublished Boolean @default(false)
   createdAt        DateTime @default(now())
 
   shiftDays     ShiftDay[]

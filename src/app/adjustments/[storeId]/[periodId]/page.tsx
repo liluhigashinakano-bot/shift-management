@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
 import { AdjustmentTable } from "@/components/adjustment-table";
 import { CastPeriodSelector } from "@/components/cast-period-selector";
+import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
+import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirmed-publish-panel";
 import Link from "next/link";
 import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
 import { assertStorePageAccess } from "@/lib/store-access";
@@ -163,6 +165,7 @@ export default async function AdjustmentsPage({
   const adjustedCasts = allCasts.filter((c) => adjustedCastIds.has(c.id));
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
+  const isStaffEditor = role === "admin" || role === "employee";
 
   return (
     <div className="min-h-dvh">
@@ -187,6 +190,19 @@ export default async function AdjustmentsPage({
             <h1 className="text-[11px] font-bold leading-tight sm:text-sm md:text-base whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
               {period.store.name}‐{period.year}年{period.month}月{halfLabel}
             </h1>
+            {role !== "cast" && isStaffEditor && (
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <ShiftPeriodLocksPanel
+                  periodId={periodId}
+                  initialRequestsLocked={Boolean(period.shiftRequestsLocked)}
+                  initialSlotsLocked={Boolean(period.shiftSlotsLocked)}
+                />
+                <AdjustmentConfirmedPublishPanel
+                  periodId={periodId}
+                  initialPublished={Boolean(period.adjustmentConfirmedPublished)}
+                />
+              </div>
+            )}
           </div>
           {role !== "cast" && (
             <Link
@@ -232,6 +248,7 @@ export default async function AdjustmentsPage({
             name: c.name,
             storeName: c.store?.name ?? null,
           }))}
+          showConfirmedShiftColumn={Boolean(period.adjustmentConfirmedPublished)}
         />
       </main>
     </div>
