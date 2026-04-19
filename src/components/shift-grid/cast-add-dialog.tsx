@@ -103,7 +103,7 @@ export function CastAddDialog({
         )}
         {periodShiftConfirmed && (
           <p className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-            シフトが確定済みのため、ここからの追加はできません。シフト表の「シフトを編集する」で確定表示をオフにしてから編集してください。
+            シフトが確定済みのため、ここからの追加はできません。シフト表の「シフトロック中」ボタンでロックを解除してから編集してください。
           </p>
         )}
         {/* タブ切り替え */}

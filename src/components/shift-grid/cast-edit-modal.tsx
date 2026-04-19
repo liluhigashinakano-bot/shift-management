@@ -134,7 +134,7 @@ export function CastEditModal({
           )}
           {periodShiftConfirmed && (
             <p className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-              シフトが確定済みのため、時間の変更・削除はできません。シフト表の「シフトを編集する」で解除してください。
+              シフトが確定済みのため、時間の変更・削除はできません。シフト表の「シフトロック中」ボタンでロックを解除してください。
             </p>
           )}
           {/* シフト希望情報 */}

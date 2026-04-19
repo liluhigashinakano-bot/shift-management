@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
     if (dayRow.period.adjustmentConfirmedPublished) {
       return NextResponse.json(
-        { error: "シフト確定済みのため調整記録を追加できません（「シフトを編集する」で解除してください）" },
+        { error: "シフト確定済みのため調整記録を追加できません（「シフトロック中」ボタンで解除してください）" },
         { status: 403 },
       );
     }
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     }
     if (existingAdj.day.period.adjustmentConfirmedPublished) {
       return NextResponse.json(
-        { error: "シフト確定済みのため調整記録を削除できません（「シフトを編集する」で解除してください）" },
+        { error: "シフト確定済みのため調整記録を削除できません（「シフトロック中」ボタンで解除してください）" },
         { status: 403 },
       );
     }

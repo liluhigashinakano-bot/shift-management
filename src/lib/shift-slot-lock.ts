@@ -20,7 +20,7 @@ export async function assertShiftSlotsUnlocked(periodId: string) {
     return NextResponse.json(
       {
         error:
-          "この期間のシフト表は締切中か、シフト確定済みのため変更できません（確定の取り消しはシフト表の「シフトを編集する」から）",
+          "この期間のシフト表は締切中か、シフト確定済みのため変更できません（ロック解除はシフト表の「シフトロック中」ボタンから）",
       },
       { status: 403 },
     );
