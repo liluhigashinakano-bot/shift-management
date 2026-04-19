@@ -20,6 +20,8 @@ type ShiftSlot = {
   isStart: boolean;
   isEnd: boolean;
   memo: string | null;
+  /** 他店舗ヘルプでマージしたスロットのみ（送付用一覧に店名を出す） */
+  _helpStore?: string;
 };
 type ShiftDay = {
   id: string;
@@ -398,7 +400,11 @@ function SendListModal({
       const endTime = castSlots[castSlots.length - 1].timeSlot + 0.5;
       const d = new Date(day.date);
       const dateStr = `${month}月${d.getDate()}日(${getJapaneseDayOfWeek(d)})`;
-      lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}`);
+      const helpStores = [
+        ...new Set(castSlots.map((s) => s._helpStore).filter((x): x is string => Boolean(x))),
+      ];
+      const helpSuffix = helpStores.length > 0 ? `　${helpStores.join("・")}` : "";
+      lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}${helpSuffix}`);
     }
     return lines.join("\n");
   }, [days, castId, month]);
