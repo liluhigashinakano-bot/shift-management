@@ -147,17 +147,18 @@ function chunkShiftDaysByCalendarPrint(days: ShiftDay[]): ShiftDay[][] {
   return chunks;
 }
 
-/** 出勤・退勤列（46px）内に収めるタグ用フォントサイズ。文字数と同一スロット人数で縮小 */
-function castNameTagFontSizePx(displayName: string, namesInCell: number): number {
+/** 46px 出勤・退勤列の内側幅（div の横パディング除く） */
+const CLOCK_COL_INNER_PX = 42;
+
+/**
+ * タグ1つに割り当てられた幅（px）と表示文字列からフォントサイズを決める（キャスト名ごと）
+ */
+function castNameTagFontSizePx(displayName: string, widthBudgetPx: number): number {
   const chars = Array.from(displayName).length;
   if (chars < 1) return 9;
-  const colInner = 42; // 46px 列 − セル内 div の横パディング目安
-  const gap = 2; // タグ間 mr-0.5
-  const n = Math.max(1, namesInCell);
-  const widthPerTag = (colInner - gap * Math.max(0, n - 1)) / n;
   // 表示側: 5文字超は px-0.5、それ以下は px-1
   const spanPad = chars > 4 ? 4 : 8;
-  const textWidth = Math.max(10, widthPerTag - spanPad);
+  const textWidth = Math.max(8, widthBudgetPx - spanPad);
   const raw = Math.floor((textWidth / chars) * 1.22);
   return Math.max(4, Math.min(10, raw));
 }
@@ -518,6 +519,18 @@ export function ShiftGrid({
                       // ドロップ判定用: ドラッグ中の同じ日かどうか
                       const isDragTarget = dragging && dragging.dayId === day.id;
 
+                      const nStart = startCasts.length;
+                      const stackStartTags = nStart > 1;
+                      const startTagWidthBudget = stackStartTags
+                        ? CLOCK_COL_INNER_PX - 2
+                        : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nStart - 1)) / Math.max(1, nStart);
+
+                      const nEnd = endCasts.length;
+                      const stackEndTags = nEnd > 1;
+                      const endTagWidthBudget = stackEndTags
+                        ? CLOCK_COL_INNER_PX - 2
+                        : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nEnd - 1)) / Math.max(1, nEnd);
+
                       return (
                         <React.Fragment key={day.id}>
                           {/* 出勤 */}
@@ -527,15 +540,26 @@ export function ShiftGrid({
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
-                            <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                            <div
+                              style={{
+                                height: "28px",
+                                overflow: "hidden",
+                                display: "flex",
+                                flexDirection: stackStartTags ? "column" : "row",
+                                flexWrap: stackStartTags ? "nowrap" : "wrap",
+                                alignItems: stackStartTags ? "stretch" : "center",
+                                justifyContent: stackStartTags ? "center" : undefined,
+                                gap: stackStartTags ? 1 : undefined,
+                                padding: "0 2px",
+                              }}
+                            >
                             {startCasts.map((s) => {
                               // ヘルプ出勤: 所属店舗が現在のシフト表と異なる場合「店舗名+名前」
                               const castInfo = allCasts.find((c) => c.id === s.castId);
                               const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
                               const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
-                              const castCount = startCasts.length;
                               const nameLen = Array.from(displayName).length;
-                              const nameFontSize = castNameTagFontSizePx(displayName, castCount);
+                              const nameFontSize = castNameTagFontSizePx(displayName, startTagWidthBudget);
                               const hasMemo = !!s.memo;
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
@@ -568,7 +592,7 @@ export function ShiftGrid({
                                     lineHeight: 1.1,
                                     letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
                                   }}
-                                  className={`inline-block rounded py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium hover:brightness-90 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
+                                  className={`${stackStartTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium hover:brightness-90 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                   onClick={() => {
                                     if (slotsLocked) return;
                                     if (hasMemo) {
@@ -601,14 +625,25 @@ export function ShiftGrid({
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
-                            <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                            <div
+                              style={{
+                                height: "28px",
+                                overflow: "hidden",
+                                display: "flex",
+                                flexDirection: stackEndTags ? "column" : "row",
+                                flexWrap: stackEndTags ? "nowrap" : "wrap",
+                                alignItems: stackEndTags ? "stretch" : "center",
+                                justifyContent: stackEndTags ? "center" : undefined,
+                                gap: stackEndTags ? 1 : undefined,
+                                padding: "0 2px",
+                              }}
+                            >
                             {endCasts.map((s) => {
                               const endCastInfo = allCasts.find((c) => c.id === s.castId);
                               const endIsHelp = endCastInfo?.store?.name && endCastInfo.store.name !== data.store.name;
                               const endDisplayName = endIsHelp ? `${endCastInfo!.store!.name}${s.cast.name}` : s.cast.name;
-                              const endCastCount = endCasts.length;
                               const endNameLen = Array.from(endDisplayName).length;
-                              const endNameFontSize = castNameTagFontSizePx(endDisplayName, endCastCount);
+                              const endNameFontSize = castNameTagFontSizePx(endDisplayName, endTagWidthBudget);
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
                               const origStart = castSlots[0]?.timeSlot ?? slot;
                               const origEnd = (castSlots[castSlots.length - 1]?.timeSlot ?? slot) + 0.5;
@@ -636,7 +671,7 @@ export function ShiftGrid({
                                   lineHeight: 1.1,
                                   letterSpacing: endNameLen > 7 ? "-0.03em" : endNameLen > 5 ? "-0.015em" : undefined,
                                 }}
-                                className={`inline-block rounded py-0 mr-0.5 cursor-grab active:cursor-grabbing hover:brightness-90 whitespace-nowrap ${endNameLen > 4 ? "px-0.5" : "px-1"}`}
+                                className={`${stackEndTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 cursor-grab active:cursor-grabbing hover:brightness-90 whitespace-nowrap ${endNameLen > 4 ? "px-0.5" : "px-1"}`}
                                 title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
                                 onClick={() => {
                                   if (slotsLocked) return;
