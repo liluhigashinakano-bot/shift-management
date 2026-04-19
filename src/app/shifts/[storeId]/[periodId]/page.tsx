@@ -9,6 +9,8 @@ import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirm
 import Link from "next/link";
 import { assertStorePageAccess } from "@/lib/store-access";
 
+export const dynamic = "force-dynamic";
+
 export default async function ShiftPage({
   params,
 }: {
@@ -194,6 +196,7 @@ export default async function ShiftPage({
           {period.store.name} ‐ {period.year}年{period.month}月{halfLabel}
         </p>
         <ShiftGrid
+          key={`${periodId}-${period.adjustmentConfirmedPublished}-${period.shiftSlotsLocked}-${period.shiftRequestsLocked}`}
           initialData={JSON.parse(JSON.stringify({ ...period, shiftRequests, helpInfo }))}
           allCasts={allCasts.map((c) => ({
             id: c.id,

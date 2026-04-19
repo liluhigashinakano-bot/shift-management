@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   TIME_SLOTS,
   displaySlotForClockOut,
@@ -145,8 +145,27 @@ function chunkShiftDaysByCalendarPrint(days: ShiftDay[]): ShiftDay[][] {
   return chunks;
 }
 
+/** サーバーから変わったときだけ grid state を差し替える（ロック解除後の再描画用） */
+function periodLockSignature(p: Period): string {
+  return [
+    p.id,
+    Boolean(p.adjustmentConfirmedPublished),
+    Boolean(p.shiftSlotsLocked),
+    Boolean(p.shiftRequestsLocked),
+  ].join("|");
+}
+
 export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
   const [data, setData] = useState(initialData);
+  const lockSigRef = useRef(periodLockSignature(initialData));
+
+  useEffect(() => {
+    const next = periodLockSignature(initialData);
+    if (next !== lockSigRef.current) {
+      lockSigRef.current = next;
+      setData(initialData);
+    }
+  }, [initialData]);
   const [addDialog, setAddDialog] = useState<{ dayId: string; dayLabel: string } | null>(null);
   const [editDay, setEditDay] = useState<ShiftDay | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
@@ -275,9 +294,36 @@ export function ShiftGrid({ initialData, allCasts, readOnly = false }: Props) {
     return [...week, ...new Array(diff).fill(null)];
   };
 
+  const blockReasons: string[] = [];
+  if (!readOnly && addShiftBlocked) {
+    if (periodShiftConfirmed) {
+      blockReasons.push(
+        "シフト確定ロック中です。ツールバーの「シフトロック中」をクリックすると解除され、編集・追加ができるようになります。",
+      );
+    }
+    if (Boolean(data.shiftRequestsLocked)) {
+      blockReasons.push(
+        "シフト希望が締切です。「締切を解除」で希望とシフト表の追加変更の締切をまとめて外せます。",
+      );
+    }
+    if (Boolean(data.shiftSlotsLocked) && !periodShiftConfirmed) {
+      blockReasons.push("シフト表の追加・変更が締切です。「締切を解除」で外せます。");
+    }
+  }
+
   return (
     <div className="shift-print-grid-root space-y-8">
       <ShiftPrintStyles />
+      {blockReasons.length > 0 && (
+        <div className="no-print rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-1">
+          <p className="font-medium">いまシフトの編集・追加ができない理由:</p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            {blockReasons.map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {weeks.map((week, weekIdx) => {
         const weekDays = padWeek(week);
         return (
