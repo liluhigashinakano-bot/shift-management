@@ -228,8 +228,8 @@ export function RequestForm({
       {currentLocked && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
           {canEditStaff
-            ? "シフト確定ロック中のため、希望の登録・編集・削除はできません（解除はシフト表画面の「シフトロック中」ボタンから）。"
-            : "この店舗・期間のシフト希望は締め切り、またはシフト確定済みのため登録・削除はできません（解除はシフト表画面の「締め切り解除」または「シフトロック中」ボタンから）。"}
+            ? "シフト確定ロック中のため、希望の登録・編集・削除はできません。"
+            : "この店舗・期間のシフト希望は締め切り、またはシフト確定済みのため登録・削除はできません。"}
         </p>
       )}
       <div className="flex items-center gap-3">
