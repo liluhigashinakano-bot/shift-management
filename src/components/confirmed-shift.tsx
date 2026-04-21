@@ -10,6 +10,7 @@ import {
 } from "@/lib/shift-utils";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { AutoFitText } from "@/components/shift-grid/auto-fit-text";
 
 type Cast = { id: string; name: string };
 type ShiftSlot = {
@@ -92,6 +93,23 @@ function countStyle(count: number): React.CSSProperties {
   const idx = Math.min(count, 15);
   const [bg, fg] = COUNT_COLORS[idx];
   return { backgroundColor: bg, color: fg };
+}
+
+/** 46px 出勤・退勤列の内側幅（div の横パディング除く） */
+const CLOCK_COL_INNER_PX = 42;
+
+/**
+ * タグ1つに割り当てられた幅（px）と表示文字列からフォントサイズを決める（キャスト名ごと）
+ * `ShiftGrid` と同じ考え方で見切れを防ぐ。
+ */
+function castNameTagFontSizePx(displayName: string, widthBudgetPx: number): number {
+  const chars = Array.from(displayName).length;
+  if (chars < 1) return 9;
+  // 表示側: 5文字超は px-0.5、それ以下は px-1
+  const spanPad = chars > 4 ? 4 : 8;
+  const textWidth = Math.max(8, widthBudgetPx - spanPad);
+  const raw = Math.floor((textWidth / chars) * 1.22);
+  return Math.max(4, Math.min(10, raw));
 }
 
 export function ConfirmedShift({
@@ -245,6 +263,17 @@ export function ConfirmedShift({
                         const count = daySlots.length;
                         const isLast = dayIdx === week.length - 1;
                         const hasWorking = count > 0;
+                        const nStart = startCasts.length;
+                        const stackStartTags = nStart > 1;
+                        const startTagWidthBudget = stackStartTags
+                          ? CLOCK_COL_INNER_PX - 2
+                          : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nStart - 1)) / Math.max(1, nStart);
+
+                        const nEnd = endCasts.length;
+                        const stackEndTags = nEnd > 1;
+                        const endTagWidthBudget = stackEndTags
+                          ? CLOCK_COL_INNER_PX - 2
+                          : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nEnd - 1)) / Math.max(1, nEnd);
 
                         return (
                           <React.Fragment key={day.id}>
@@ -252,7 +281,19 @@ export function ConfirmedShift({
                               style={{ boxShadow: "inset 1px 0 0 #9ca3af" }}
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
-                              <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                              <div
+                                style={{
+                                  height: "28px",
+                                  overflow: "hidden",
+                                  display: "flex",
+                                  flexDirection: stackStartTags ? "column" : "row",
+                                  flexWrap: stackStartTags ? "nowrap" : "wrap",
+                                  alignItems: stackStartTags ? "stretch" : "center",
+                                  justifyContent: stackStartTags ? "center" : undefined,
+                                  gap: stackStartTags ? 1 : undefined,
+                                  padding: "0 2px",
+                                }}
+                              >
                                 {startCasts.map((s) => {
                                   const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
@@ -262,13 +303,21 @@ export function ConfirmedShift({
                                     : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
                                       ? `${castInfo!.store!.name}${s.cast.name}`
                                       : s.cast.name;
+                                  const nameLen = Array.from(displayName).length;
+                                  const nameFontSize = castNameTagFontSizePx(displayName, startTagWidthBudget);
                                   const tagBg = helpStore ? "#fef3c7" : "#fbcfe8"; // ヘルプ先は黄色系
                                   const tagColor = helpStore ? "#92400e" : "#9d174d";
                                   return (
                                     <span
                                       key={s.castId + (helpStore || "")}
-                                      style={{ backgroundColor: tagBg, color: tagColor, fontSize: "9px" }}
-                                      className="inline-block rounded px-1 py-0 mr-0.5 font-medium leading-tight whitespace-nowrap"
+                                      style={{
+                                        backgroundColor: tagBg,
+                                        color: tagColor,
+                                        fontSize: `${nameFontSize}px`,
+                                        lineHeight: 1.1,
+                                        letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
+                                      }}
+                                      className={`${stackStartTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 font-medium whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                     >
                                       {displayName}
                                     </span>
@@ -280,7 +329,19 @@ export function ConfirmedShift({
                               style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
-                              <div style={{ height: "28px", overflow: "hidden", display: "flex", flexWrap: "wrap", alignItems: "center", padding: "0 2px" }}>
+                              <div
+                                style={{
+                                  height: "28px",
+                                  overflow: "hidden",
+                                  display: "flex",
+                                  flexDirection: stackEndTags ? "column" : "row",
+                                  flexWrap: stackEndTags ? "nowrap" : "wrap",
+                                  alignItems: stackEndTags ? "stretch" : "center",
+                                  justifyContent: stackEndTags ? "center" : undefined,
+                                  gap: stackEndTags ? 1 : undefined,
+                                  padding: "0 2px",
+                                }}
+                              >
                                 {endCasts.map((s) => {
                                   const reqHide = shiftRequests.find(
                                     (r) =>
@@ -297,11 +358,19 @@ export function ConfirmedShift({
                                     : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
                                       ? `${castInfo!.store!.name}${s.cast.name}`
                                       : s.cast.name;
+                                  const nameLen = Array.from(displayName).length;
+                                  const nameFontSize = castNameTagFontSizePx(displayName, endTagWidthBudget);
                                   return (
                                     <span
                                       key={s.castId + (helpStore || "")}
-                                      style={{ backgroundColor: "#e5e7eb", color: "#4b5563", fontSize: "9px" }}
-                                      className="inline-block rounded px-1 py-0 mr-0.5 leading-tight whitespace-nowrap"
+                                      style={{
+                                        backgroundColor: "#e5e7eb",
+                                        color: "#4b5563",
+                                        fontSize: `${nameFontSize}px`,
+                                        lineHeight: 1.1,
+                                        letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
+                                      }}
+                                      className={`${stackEndTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                     >
                                       {displayName}
                                     </span>
@@ -337,8 +406,8 @@ export function ConfirmedShift({
                         <td colSpan={2} className="px-0.5 py-0.5 text-[9px] font-bold text-sky-700 whitespace-nowrap">
                           {totalHours || "-"}
                         </td>
-                        <td className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                          {day.eventName || "-"}
+                        <td className={`px-0.5 py-0.5 text-purple-700 overflow-hidden ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                          <AutoFitText text={day.eventName || "-"} baseSize={8} minSize={5} />
                         </td>
                       </React.Fragment>
                     );
@@ -349,8 +418,8 @@ export function ConfirmedShift({
                   {week.map((day, dayIdx) => {
                     const isLast = dayIdx === week.length - 1;
                     return (
-                      <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                        {day.employeeOnDuty || "-"}
+                      <td key={day.id} colSpan={4} className={`px-0.5 py-0.5 text-orange-800 overflow-hidden ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
+                        <AutoFitText text={day.employeeOnDuty || "-"} baseSize={8} minSize={5} />
                       </td>
                     );
                   })}

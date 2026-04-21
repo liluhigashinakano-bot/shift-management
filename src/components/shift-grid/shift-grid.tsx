@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { ShiftPrintStyles } from "./shift-print-styles";
+import { AutoFitText } from "./auto-fit-text";
 
 type Cast = { id: string; name: string };
 type ShiftSlot = {
@@ -736,14 +737,14 @@ export function ShiftGrid({
                         {totalHours || "-"}
                       </td>
                       <td
-                        className={`px-0.5 py-0.5 text-[8px] text-purple-700 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-purple-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                        className={`px-0.5 py-0.5 text-purple-700 overflow-hidden ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-purple-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                         onClick={() => {
                           if (slotsLocked) return;
                           const dd = new Date(day.date);
                           setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "eventName", label: "企画名", value: day.eventName || "" });
                         }}
                       >
-                        {day.eventName || "-"}
+                        <AutoFitText text={day.eventName || "-"} baseSize={8} minSize={5} />
                       </td>
                     </React.Fragment>
                   );
@@ -763,14 +764,14 @@ export function ShiftGrid({
                     <td
                       key={day.id}
                       colSpan={4}
-                      className={`px-0.5 py-0.5 text-[8px] text-orange-800 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-orange-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      className={`px-0.5 py-0.5 text-orange-800 overflow-hidden ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-orange-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
                         if (slotsLocked) return;
                         const dd = new Date(day.date);
                         setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "employeeOnDuty", label: "社員", value: day.employeeOnDuty || "" });
                       }}
                     >
-                      {day.employeeOnDuty || "-"}
+                      <AutoFitText text={day.employeeOnDuty || "-"} baseSize={8} minSize={5} />
                     </td>
                   );
                 })}
@@ -789,14 +790,14 @@ export function ShiftGrid({
                     <td
                       key={day.id}
                       colSpan={4}
-                      className={`px-0.5 py-0.5 text-[8px] text-gray-600 whitespace-nowrap ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-gray-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                      className={`px-0.5 py-0.5 text-gray-600 overflow-hidden ${slotsLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-gray-100"} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                       onClick={() => {
                         if (slotsLocked) return;
                         const dd = new Date(day.date);
                         setEditField({ dayId: day.id, dayLabel: `${dd.getMonth()+1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`, field: "expectedVisitors", label: "来店予定", value: day.expectedVisitors || "" });
                       }}
                     >
-                      {day.expectedVisitors || "-"}
+                      <AutoFitText text={day.expectedVisitors || "-"} baseSize={8} minSize={5} />
                     </td>
                   );
                 })}
