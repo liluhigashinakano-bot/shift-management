@@ -395,8 +395,8 @@ export function ConfirmedShift({
                     <span className="text-emerald-800">予算</span>/<span className="text-sky-700">時間</span>
                   </td>
                   {week.map((day, dayIdx) => {
-                    const budget = day.targetBudget;
                     const totalHours = day.shiftSlots.length * 0.5;
+                    const budget = totalHours > 0 ? totalHours * 6000 : 0;
                     const isLast = dayIdx === week.length - 1;
                     return (
                       <React.Fragment key={day.id}>

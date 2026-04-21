@@ -720,8 +720,8 @@ export function ShiftGrid({
                     );
                   }
 
-                  const budget = day.targetBudget;
                   const totalHours = day.shiftSlots.length * 0.5;
+                  const budget = totalHours > 0 ? totalHours * 6000 : 0;
                   return (
                     <React.Fragment key={day.id}>
                       <td

@@ -16,6 +16,7 @@ type ShiftDay = {
   expectedVisitors: string | null;
   notes: string | null;
   employeeOnDuty: string | null;
+  shiftSlots?: { id: string }[];
 };
 
 type Props = {
@@ -28,9 +29,9 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
   const d = new Date(day.date);
   const label = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
 
-  const [targetBudget, setTargetBudget] = useState(
-    day.targetBudget?.toString() ?? ""
-  );
+  const totalHours = (day.shiftSlots?.length ?? 0) * 0.5;
+  const autoBudget = totalHours > 0 ? totalHours * 6000 : 0;
+
   const [eventName, setEventName] = useState(day.eventName ?? "");
   const [expectedVisitors, setExpectedVisitors] = useState(
     day.expectedVisitors ?? ""
@@ -57,7 +58,7 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
       body: JSON.stringify({
         action: "updateDay",
         dayId: day.id,
-        targetBudget: targetBudget ? parseInt(targetBudget) : null,
+        targetBudget: autoBudget || null,
         eventName: eventName || null,
         expectedVisitors: expectedVisitors || null,
         notes: (() => {
@@ -81,12 +82,13 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
     <Modal open title={`${label} - 日別情報`} onClose={onClose}>
       <div className="space-y-3">
         <div className="space-y-1">
-          <Label>目標予算 (円)</Label>
-          <Input
-            type="number"
-            value={targetBudget}
-            onChange={(e) => setTargetBudget(e.target.value)}
-          />
+          <Label>予算（自動計算）</Label>
+          <div className="rounded border bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            {autoBudget > 0 ? `${autoBudget.toLocaleString()} 円` : "-"}
+            <span className="ml-2 text-xs text-gray-500">
+              （労働時間 {totalHours} h × 6,000 円）
+            </span>
+          </div>
         </div>
         <div className="space-y-1">
           <Label>出勤社員</Label>

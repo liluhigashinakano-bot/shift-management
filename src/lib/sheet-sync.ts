@@ -106,7 +106,7 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
         // 集計行
         const summaryRow = summaryRow1Based(rowOffset);
         const totalHours = day.shiftSlots.length * 0.5;
-        const budget = day.targetBudget;
+        const budget = totalHours > 0 ? totalHours * 6000 : 0;
 
         await writeCell(sheetName, `${numToCol(colOffset - 1)}${summaryRow}`, budget || null);
         await writeCell(sheetName, `${numToCol(colOffset + 1)}${summaryRow}`, totalHours || null);
