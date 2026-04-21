@@ -215,6 +215,150 @@ export function ShiftGrid({
   const slotsLocked = effectiveSlotLocked || periodShiftConfirmed || readOnly;
   const addShiftBlocked = effectiveReqLocked || slotsLocked;
 
+  // ====== 履歴（元に戻す／やり直し） ======
+  type HistorySnapshot = {
+    days: Array<{
+      id: string;
+      targetBudget: number | null;
+      eventName: string | null;
+      expectedVisitors: string | null;
+      notes: string | null;
+      employeeOnDuty: string | null;
+      slots: Array<{
+        timeSlot: number;
+        castId: string;
+        isStart: boolean;
+        isEnd: boolean;
+        memo: string | null;
+      }>;
+    }>;
+  };
+  const MAX_HISTORY = 50;
+  const snapshotFromData = useCallback((d: typeof data): HistorySnapshot => ({
+    days: d.shiftDays.map((day) => ({
+      id: day.id,
+      targetBudget: day.targetBudget,
+      eventName: day.eventName,
+      expectedVisitors: day.expectedVisitors,
+      notes: day.notes,
+      employeeOnDuty: day.employeeOnDuty,
+      slots: day.shiftSlots.map((s) => ({
+        timeSlot: s.timeSlot,
+        castId: s.castId,
+        isStart: s.isStart,
+        isEnd: s.isEnd,
+        memo: s.memo ?? null,
+      })),
+    })),
+  }), []);
+
+  const historyRef = useRef<HistorySnapshot[]>([]);
+  const indexRef = useRef<number>(-1);
+  const prevSnapJsonRef = useRef<string>("");
+  const suppressHistoryRef = useRef<boolean>(false);
+  const [, setHistoryVersion] = useState(0);
+  const [historyBusy, setHistoryBusy] = useState(false);
+
+  useEffect(() => {
+    const snap = snapshotFromData(data);
+    const snapJson = JSON.stringify(snap);
+
+    if (suppressHistoryRef.current) {
+      suppressHistoryRef.current = false;
+      prevSnapJsonRef.current = snapJson;
+      return;
+    }
+
+    if (snapJson === prevSnapJsonRef.current) return;
+
+    historyRef.current = historyRef.current.slice(0, indexRef.current + 1);
+    historyRef.current.push(snap);
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current.shift();
+    } else {
+      indexRef.current++;
+    }
+    prevSnapJsonRef.current = snapJson;
+    setHistoryVersion((v) => v + 1);
+  }, [data, snapshotFromData]);
+
+  const canUndo = indexRef.current > 0 && !historyBusy && !slotsLocked;
+  const canRedo =
+    indexRef.current < historyRef.current.length - 1 && !historyBusy && !slotsLocked;
+
+  const applySnapshot = useCallback(
+    async (snap: HistorySnapshot) => {
+      setHistoryBusy(true);
+      try {
+        const res = await fetch("/api/shifts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "restoreSnapshot",
+            periodId: data.id,
+            days: snap.days,
+          }),
+        });
+        if (!res.ok) {
+          const r = await fetch(`/api/shifts?periodId=${data.id}`);
+          if (r.ok) setData(await r.json());
+          return false;
+        }
+        suppressHistoryRef.current = true;
+        const r = await fetch(`/api/shifts?periodId=${data.id}`);
+        if (r.ok) setData(await r.json());
+        return true;
+      } finally {
+        setHistoryBusy(false);
+      }
+    },
+    [data.id],
+  );
+
+  const handleUndo = useCallback(async () => {
+    if (indexRef.current <= 0 || historyBusy || slotsLocked) return;
+    const targetIdx = indexRef.current - 1;
+    const snap = historyRef.current[targetIdx];
+    const ok = await applySnapshot(snap);
+    if (ok) {
+      indexRef.current = targetIdx;
+      setHistoryVersion((v) => v + 1);
+    }
+  }, [applySnapshot, historyBusy, slotsLocked]);
+
+  const handleRedo = useCallback(async () => {
+    if (indexRef.current >= historyRef.current.length - 1 || historyBusy || slotsLocked) return;
+    const targetIdx = indexRef.current + 1;
+    const snap = historyRef.current[targetIdx];
+    const ok = await applySnapshot(snap);
+    if (ok) {
+      indexRef.current = targetIdx;
+      setHistoryVersion((v) => v + 1);
+    }
+  }, [applySnapshot, historyBusy, slotsLocked]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod) return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo]);
+
   const handleCastClick = (day: ShiftDay, castId: string, castName: string) => {
     if (slotsLocked) return;
     const castSlots = day.shiftSlots
@@ -340,6 +484,67 @@ export function ShiftGrid({
   return (
     <div className="shift-print-grid-root space-y-8">
       <ShiftPrintStyles />
+      {!readOnly && (
+        <div className="no-print flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title="元に戻す (Ctrl+Z)"
+            aria-label="元に戻す"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border shadow-sm transition ${
+              canUndo
+                ? "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+                : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+            }`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={handleRedo}
+            disabled={!canRedo}
+            title="やり直し (Ctrl+Y / Ctrl+Shift+Z)"
+            aria-label="やり直し"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border shadow-sm transition ${
+              canRedo
+                ? "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100"
+                : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+            }`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path d="m15 14 5-5-5-5" />
+              <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+            </svg>
+          </button>
+          {historyBusy && (
+            <span className="ml-1 text-[10px] text-gray-500">反映中...</span>
+          )}
+        </div>
+      )}
       {blockReasons.length > 0 && (
         <div className="no-print rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-1">
           <p className="font-medium">いまシフトの編集・追加ができない理由:</p>

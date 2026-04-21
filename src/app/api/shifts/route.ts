@@ -365,5 +365,85 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // 元に戻す／やり直し用: シフト期間全体のスナップショットを一括で復元
+  if (action === "restoreSnapshot") {
+    const { periodId, days } = body as {
+      periodId: string;
+      days: Array<{
+        id: string;
+        targetBudget: number | null;
+        eventName: string | null;
+        expectedVisitors: string | null;
+        notes: string | null;
+        employeeOnDuty: string | null;
+        slots: Array<{
+          timeSlot: number;
+          castId: string;
+          isStart: boolean;
+          isEnd: boolean;
+          memo: string | null;
+        }>;
+      }>;
+    };
+
+    if (!periodId || !Array.isArray(days)) {
+      return NextResponse.json({ error: "periodId and days are required" }, { status: 400 });
+    }
+
+    const period = await prisma.shiftPeriod.findUnique({
+      where: { id: periodId },
+      select: { id: true },
+    });
+    if (!period) {
+      return NextResponse.json({ error: "Period not found" }, { status: 404 });
+    }
+    const lockRestore = await assertStaffShiftPeriodNotFinalized(periodId);
+    if (lockRestore) return lockRestore;
+
+    // 指定された日がすべて同じ periodId に属しているか確認
+    const dayIds = days.map((d) => d.id);
+    const dbDays = await prisma.shiftDay.findMany({
+      where: { id: { in: dayIds } },
+      select: { id: true, periodId: true },
+    });
+    const validDayIds = new Set(
+      dbDays.filter((d) => d.periodId === periodId).map((d) => d.id),
+    );
+
+    await prisma.$transaction(async (tx) => {
+      for (const day of days) {
+        if (!validDayIds.has(day.id)) continue;
+
+        await tx.shiftDay.update({
+          where: { id: day.id },
+          data: {
+            targetBudget: day.targetBudget,
+            eventName: day.eventName,
+            expectedVisitors: day.expectedVisitors,
+            notes: day.notes,
+            employeeOnDuty: day.employeeOnDuty,
+          },
+        });
+
+        await tx.shiftSlot.deleteMany({ where: { dayId: day.id } });
+
+        if (Array.isArray(day.slots) && day.slots.length > 0) {
+          await tx.shiftSlot.createMany({
+            data: day.slots.map((s) => ({
+              dayId: day.id,
+              timeSlot: s.timeSlot,
+              castId: s.castId,
+              isStart: Boolean(s.isStart),
+              isEnd: Boolean(s.isEnd),
+              memo: s.memo ?? null,
+            })),
+          });
+        }
+      }
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
