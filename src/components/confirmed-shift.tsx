@@ -184,7 +184,7 @@ export function ConfirmedShift({
             className="inline-flex min-h-9 shrink-0 items-center justify-center self-start rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:self-center sm:text-xs whitespace-nowrap"
             onClick={() => setShowSendList(true)}
           >
-            送付用一覧
+            送付用テキスト化
           </button>
         )}
       </div>
@@ -485,7 +485,7 @@ function SendListModal({
   };
 
   return (
-    <Modal open title={`${castName} - 送付用一覧`} onClose={onClose}>
+    <Modal open title={`${castName} - 送付用テキスト化`} onClose={onClose}>
       <div className="space-y-3">
         <pre className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm whitespace-pre-wrap font-sans">
           {text}
