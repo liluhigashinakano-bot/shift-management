@@ -39,10 +39,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Period not found" }, { status: 404 });
   }
 
-  // シフト希望情報をdayIdにマッピングして返す
+  // シフト希望情報をdayIdにマッピングして返す。
+  // Undo/Redo のスナップショット復元で createdAt/updatedAt/status を保持できるよう、
+  // タイムスタンプ系も合わせて返却する。
   const requests = await prisma.shiftRequest.findMany({
     where: { periodId },
-    select: { castId: true, date: true, startTime: true, endTime: true, notes: true },
+    select: {
+      id: true,
+      castId: true,
+      date: true,
+      startTime: true,
+      endTime: true,
+      notes: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 
   // date → dayId のマッピングを構築
@@ -53,12 +65,16 @@ export async function GET(req: NextRequest) {
   }
 
   const shiftRequests = requests.map((r) => ({
+    id: r.id,
     castId: r.castId,
     dayId: dayMap.get(new Date(r.date).toISOString().slice(0, 10)) || null,
     date: r.date,
     startTime: r.startTime,
     endTime: r.endTime,
     notes: r.notes,
+    status: r.status,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   }));
 
   // ヘルプ出勤情報: この店舗所属のキャストが他店舗のシフトに入っている情報を取得
@@ -205,7 +221,7 @@ export async function POST(req: NextRequest) {
 
     const dayForSlotLock = await prisma.shiftDay.findUnique({
       where: { id: dayId },
-      select: { periodId: true },
+      select: { periodId: true, date: true },
     });
     if (!dayForSlotLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
@@ -239,6 +255,15 @@ export async function POST(req: NextRequest) {
     }
 
     await prisma.shiftSlot.deleteMany({ where: { dayId, castId } });
+
+    // 対応する ShiftRequest（その日のキャストの希望）も削除する。
+    // 残しておくと「未提出キャスト」一覧から漏れる（admin が addCast で自動生成した synthetic
+    // request が残ったまま slot だけ消えて、提出済み扱いになってしまう）。
+    // 他の日の希望は保持される（その日付分だけ削除）。
+    await prisma.shiftRequest.deleteMany({
+      where: { castId, periodId: dayForSlotLock.periodId, date: dayForSlotLock.date },
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -262,26 +287,37 @@ export async function POST(req: NextRequest) {
       orderBy: { timeSlot: "asc" },
     });
 
-    if (existing.length > 0) {
-      const originalStart = existing[0].timeSlot;
-      const originalEnd = existing[existing.length - 1].timeSlot + 0.5;
+    // editCast は「既存スロットの時間変更」専用。スロット 0 件の場合は別ユーザー or 別タブで
+    // 既に削除されている／元から無いケース。ここで誤って create してしまうと
+    // 「addCast 経由でない synthetic な配置」が生まれてしまうので 409 で弾く。
+    if (existing.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "編集対象のシフトが見つかりません。画面を再読み込みしてから操作してください。",
+        },
+        { status: 409 },
+      );
+    }
 
-      // 時間が変わった場合のみ調整記録
-      if (originalStart !== newStart || originalEnd !== newEnd) {
-        const adjAction = (newEnd - newStart) < (originalEnd - originalStart) ? "shorten" : "move";
-        await prisma.shiftAdjustment.create({
-          data: {
-            dayId,
-            castId,
-            originalStart,
-            originalEnd,
-            adjustedStart: newStart,
-            adjustedEnd: newEnd,
-            action: adjAction,
-            reason: reason || "時間変更",
-          },
-        });
-      }
+    const originalStart = existing[0].timeSlot;
+    const originalEnd = existing[existing.length - 1].timeSlot + 0.5;
+
+    // 時間が変わった場合のみ調整記録
+    if (originalStart !== newStart || originalEnd !== newEnd) {
+      const adjAction = (newEnd - newStart) < (originalEnd - originalStart) ? "shorten" : "move";
+      await prisma.shiftAdjustment.create({
+        data: {
+          dayId,
+          castId,
+          originalStart,
+          originalEnd,
+          adjustedStart: newStart,
+          adjustedEnd: newEnd,
+          action: adjAction,
+          reason: reason || "時間変更",
+        },
+      });
     }
 
     // 元のスロットからメモを保持（出勤スロットのメモ = シフト希望メモ）
@@ -371,7 +407,7 @@ export async function POST(req: NextRequest) {
 
   // 元に戻す／やり直し用: シフト期間全体のスナップショットを一括で復元
   if (action === "restoreSnapshot") {
-    const { periodId, days } = body as {
+    const { periodId, days, shiftRequests } = body as {
       periodId: string;
       days: Array<{
         id: string;
@@ -387,6 +423,21 @@ export async function POST(req: NextRequest) {
           isEnd: boolean;
           memo: string | null;
         }>;
+      }>;
+      /**
+       * 期間全体のシフト希望スナップショット。createdAt/updatedAt を保持して復元する
+       * （未提出キャスト一覧の「最終操作日時」が Undo/Redo で書き換わらないように）。
+       * 旧クライアント互換のため省略可。省略時はシフト希望側は触らない。
+       */
+      shiftRequests?: Array<{
+        castId: string;
+        date: string;
+        startTime: number;
+        endTime: number;
+        notes: string | null;
+        status?: string;
+        createdAt?: string;
+        updatedAt?: string;
       }>;
     };
 
@@ -440,6 +491,27 @@ export async function POST(req: NextRequest) {
               isStart: Boolean(s.isStart),
               isEnd: Boolean(s.isEnd),
               memo: s.memo ?? null,
+            })),
+          });
+        }
+      }
+
+      // shiftRequests スナップショットがあれば、期間内の希望を完全置換する。
+      // createdAt/updatedAt も渡された値で復元する（@updatedAt は create では尊重される）。
+      if (Array.isArray(shiftRequests)) {
+        await tx.shiftRequest.deleteMany({ where: { periodId } });
+        if (shiftRequests.length > 0) {
+          await tx.shiftRequest.createMany({
+            data: shiftRequests.map((r) => ({
+              castId: r.castId,
+              periodId,
+              date: new Date(r.date),
+              startTime: r.startTime,
+              endTime: r.endTime,
+              notes: r.notes ?? null,
+              status: r.status ?? "approved",
+              ...(r.createdAt ? { createdAt: new Date(r.createdAt) } : {}),
+              ...(r.updatedAt ? { updatedAt: new Date(r.updatedAt) } : {}),
             })),
           });
         }

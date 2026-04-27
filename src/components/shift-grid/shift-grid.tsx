@@ -4,9 +4,11 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   TIME_SLOTS,
   displaySlotForClockOut,
+  findShiftRequestByDayId,
   formatTimeSlot,
   getJapaneseDayOfWeek,
   hideEndCastNameForWishEnd29,
+  toUtcDateKey,
 } from "@/lib/shift-utils";
 import { CastAddDialog } from "./cast-add-dialog";
 import { CastEditModal } from "./cast-edit-modal";
@@ -46,6 +48,9 @@ type ShiftRequestInfo = {
   startTime: number;
   endTime: number;
   notes: string | null;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 type Period = {
   id: string;
@@ -75,6 +80,8 @@ type Props = {
 type EditTarget = {
   dayId: string;
   dayLabel: string;
+  /** UTC ベースの YYYY-MM-DD（cast-edit-modal 内のシフト希望マッチに使用） */
+  dayDateIso: string;
   castId: string;
   castName: string;
   currentStart: number;
@@ -200,6 +207,8 @@ export function ShiftGrid({
     castId: string;
     dayId: string;
     dayLabel: string;
+    /** UTC ベースの YYYY-MM-DD（cast-edit-modal に渡す） */
+    dayDateIso: string;
     currentStart: number;
     currentEnd: number;
   } | null>(null);
@@ -232,6 +241,21 @@ export function ShiftGrid({
         memo: string | null;
       }>;
     }>;
+    /**
+     * 期間全体のシフト希望スナップショット。removeCast によって希望が削除されると
+     * 「未提出キャスト」一覧の判定が変わるため、Undo/Redo 時にも一緒に巻き戻す。
+     * createdAt/updatedAt も保持して「最終操作日時」がリセットされないようにする。
+     */
+    shiftRequests: Array<{
+      castId: string;
+      date: string;
+      startTime: number;
+      endTime: number;
+      notes: string | null;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    }>;
   };
   const MAX_HISTORY = 50;
   const snapshotFromData = useCallback((d: typeof data): HistorySnapshot => ({
@@ -249,6 +273,26 @@ export function ShiftGrid({
         isEnd: s.isEnd,
         memo: s.memo ?? null,
       })),
+    })),
+    shiftRequests: (d.shiftRequests ?? []).map((r) => ({
+      castId: r.castId,
+      date: typeof r.date === "string" ? r.date : new Date(r.date).toISOString(),
+      startTime: r.startTime,
+      endTime: r.endTime,
+      notes: r.notes ?? null,
+      status: r.status ?? "approved",
+      createdAt:
+        typeof r.createdAt === "string"
+          ? r.createdAt
+          : r.createdAt
+            ? new Date(r.createdAt).toISOString()
+            : new Date().toISOString(),
+      updatedAt:
+        typeof r.updatedAt === "string"
+          ? r.updatedAt
+          : r.updatedAt
+            ? new Date(r.updatedAt).toISOString()
+            : new Date().toISOString(),
     })),
   }), []);
 
@@ -297,6 +341,7 @@ export function ShiftGrid({
             action: "restoreSnapshot",
             periodId: data.id,
             days: snap.days,
+            shiftRequests: snap.shiftRequests,
           }),
         });
         if (!res.ok) {
@@ -371,7 +416,17 @@ export function ShiftGrid({
     const memo = startSlot?.memo || null;
     const d = new Date(day.date);
     const dayLabel = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
-    setEditTarget({ dayId: day.id, dayLabel, castId, castName, currentStart, currentEnd, memo });
+    const dayDateIso = toUtcDateKey(day.date);
+    setEditTarget({
+      dayId: day.id,
+      dayLabel,
+      dayDateIso,
+      castId,
+      castName,
+      currentStart,
+      currentEnd,
+      memo,
+    });
   };
 
   // ドラッグ＆ドロップ: 出勤/退勤タグを別の時間行にドロップして時間変更
@@ -814,6 +869,7 @@ export function ShiftGrid({
                                         castId: s.castId,
                                         dayId: day.id,
                                         dayLabel: `${dd.getMonth() + 1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`,
+                                        dayDateIso: toUtcDateKey(day.date),
                                         currentStart: origStart,
                                         currentEnd: origEnd,
                                       });
@@ -1099,6 +1155,7 @@ export function ShiftGrid({
         <CastEditModal
           dayId={editTarget.dayId}
           dayLabel={editTarget.dayLabel}
+          dayDateIso={editTarget.dayDateIso}
           castId={editTarget.castId}
           castName={editTarget.castName}
           currentStart={editTarget.currentStart}
@@ -1122,6 +1179,7 @@ export function ShiftGrid({
             setEditTarget({
               dayId: memoView.dayId,
               dayLabel: memoView.dayLabel,
+              dayDateIso: memoView.dayDateIso,
               castId: memoView.castId,
               castName: memoView.castName,
               currentStart: memoView.currentStart,
@@ -1240,17 +1298,13 @@ function MemoViewModal({
   onClose: () => void;
   onEdit: () => void;
 }) {
-  // このキャスト・この日の希望情報を取得
-  // dayLabelは "4/1(水)" 形式。requestのdateからも同形式を生成して比較
-  const req = shiftRequests?.find((r) => {
-    if (r.castId !== memoView.castId) return false;
-    // UTC日付文字列をパースして月/日を取得（タイムゾーンずれ回避）
-    const parts = r.date.slice(0, 10).split("-");
-    const m = parseInt(parts[1]);
-    const d = parseInt(parts[2]);
-    const label = `${m}/${d}`;
-    return memoView.dayLabel.includes(label);
-  });
+  // dayId で完全一致させる。旧実装の dayLabel.includes("4/1") は "4/10" や "4/11"
+  // にも誤マッチしていたため、shiftRequests に含まれる dayId で厳密に突き合わせる。
+  const req = findShiftRequestByDayId(
+    shiftRequests,
+    memoView.castId,
+    memoView.dayId,
+  );
 
   const hasChanged = req && (req.startTime !== memoView.currentStart || req.endTime !== memoView.currentEnd);
 

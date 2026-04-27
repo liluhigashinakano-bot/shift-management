@@ -5,11 +5,21 @@ import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import {
+  TIME_SLOTS,
+  findShiftRequestByDate,
+  formatTimeSlot,
+} from "@/lib/shift-utils";
 
 type Props = {
   dayId: string;
   dayLabel: string;
+  /**
+   * 対象日の UTC 日付キー（YYYY-MM-DD）。
+   * シフト希望のマッチングは dayLabel ではなくこのキーで完全一致させる。
+   * 旧実装では dayLabel.includes("4/1") が "4/10" などの月初日にも誤マッチしていた。
+   */
+  dayDateIso: string;
   castId: string;
   castName: string;
   currentStart: number;
@@ -34,6 +44,7 @@ type RequestInfo = {
 export function CastEditModal({
   dayId,
   dayLabel,
+  dayDateIso,
   castId,
   castName,
   currentStart,
@@ -60,13 +71,16 @@ export function CastEditModal({
       try {
         const res = await fetch(`/api/requests?periodId=${periodId}&castId=${castId}`);
         if (res.ok) {
-          const requests = await res.json();
-          // dayLabelから日付を特定して該当日の希望を探す
-          const match = requests.find((r: any) => {
-            const d = new Date(r.date);
-            const label = `${d.getMonth() + 1}/${d.getDate()}`;
-            return dayLabel.includes(label);
-          });
+          const requests = (await res.json()) as Array<{
+            castId: string;
+            date: string;
+            startTime: number;
+            endTime: number;
+            notes: string | null;
+          }>;
+          // 旧実装は dayLabel.includes("4/1") を使っており "4/10" など月初日に
+          // 誤マッチしていた。UTC 日付キー (YYYY-MM-DD) で完全一致させる。
+          const match = findShiftRequestByDate(requests, castId, dayDateIso);
           if (match) {
             setRequestInfo({
               startTime: match.startTime,
@@ -80,7 +94,7 @@ export function CastEditModal({
       setLoading(false);
     }
     fetchRequest();
-  }, [periodId, castId, dayLabel]);
+  }, [periodId, castId, dayDateIso]);
 
   const handleDelete = async () => {
     if (sheetEditBlocked) return;
