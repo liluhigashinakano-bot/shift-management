@@ -223,6 +223,12 @@ export default async function ShiftPage({
           )}
           <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
             <Link
+              href={`/unsubmitted/${storeId}/${periodId}`}
+              className="inline-flex min-h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-rose-700 shadow-sm hover:bg-rose-50 sm:min-h-9 sm:px-2.5 sm:py-1 sm:text-xs whitespace-nowrap"
+            >
+              未提出キャスト
+            </Link>
+            <Link
               href={`/confirmed/${storeId}/${periodId}`}
               className="inline-flex min-h-8 items-center justify-center rounded-md border border-purple-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:min-h-9 sm:px-2.5 sm:py-1 sm:text-xs whitespace-nowrap"
             >
