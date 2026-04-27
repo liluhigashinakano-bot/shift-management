@@ -343,12 +343,13 @@ export function ConfirmedShift({
                                 }}
                               >
                                 {endCasts.map((s) => {
+                                  // この行（slot）が当該キャストの実退勤時刻。希望29:00 かつ 実退勤も29:00（=slot）のときのみ非表示。
                                   const reqHide = shiftRequests.find(
                                     (r) =>
                                       r.castId === s.castId &&
                                       new Date(r.date).toISOString().slice(0, 10) ===
                                         new Date(day.date).toISOString().slice(0, 10) &&
-                                      hideEndCastNameForWishEnd29(r.endTime),
+                                      hideEndCastNameForWishEnd29(r.endTime, slot),
                                   );
                                   if (reqHide) return null;
                                   const helpStore = (s as any)._helpStore;

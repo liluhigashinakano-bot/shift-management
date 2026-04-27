@@ -8,9 +8,16 @@ export function formatTimeSlot(slot: number): string {
   return `${hour}:${min}`;
 }
 
-/** シフト希望の退勤が 29:00 のとき、シフト表の退勤列にキャスト名を出さない */
-export function hideEndCastNameForWishEnd29(endTime: number): boolean {
-  return endTime === 29;
+/**
+ * シフト表の退勤列にキャスト名を出さない判定。
+ * シフト希望の退勤が 29:00（閉店）で、かつ実際の退勤も 29:00（=希望から変更なし）の場合のみ非表示にする。
+ * 希望 29:00 でも実退勤が 29:00 より前にカットされた場合は、変更が分かるよう退勤列に名前を表示する。
+ */
+export function hideEndCastNameForWishEnd29(
+  wishEndTime: number,
+  actualEndTime: number,
+): boolean {
+  return wishEndTime === 29 && actualEndTime === 29;
 }
 
 /**

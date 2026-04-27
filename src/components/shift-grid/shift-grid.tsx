@@ -777,15 +777,18 @@ export function ShiftGrid({
                               const req = data.shiftRequests?.find(
                                 (r) => r.castId === s.castId && r.dayId === day.id
                               );
-                              const isAdjusted = req && (req.startTime !== origStart || req.endTime !== origEnd);
+                              // 出勤タグの色は「出勤時刻の変更」のみで判定する。
+                              // 退勤のみ変更された場合は退勤タグ側で濃いグレー表示するので、出勤タグはピンクのまま。
+                              const isStartAdjusted = !!req && req.startTime !== origStart;
+                              const isEndAdjustedForTitle = !!req && req.endTime !== origEnd;
 
-                              // 色: メモあり→黄色系, 変更済み→濃い色, 通常→ピンク（インラインstyleで確実適用）
+                              // 色: メモあり→黄色系, 出勤時間変更済み→濃いピンク, 通常→ピンク（インラインstyleで確実適用）
                               let tagColor: React.CSSProperties = { backgroundColor: "#fbcfe8", color: "#9d174d" }; // 通常ピンク
-                              if (hasMemo && isAdjusted) {
+                              if (hasMemo && isStartAdjusted) {
                                 tagColor = { backgroundColor: "#fed7aa", color: "#9a3412", boxShadow: "0 0 0 1px #fdba74" }; // 薄いオレンジ
                               } else if (hasMemo) {
                                 tagColor = { backgroundColor: "#fef08a", color: "#713f12", boxShadow: "0 0 0 1px #facc15" }; // 黄色
-                              } else if (isAdjusted) {
+                              } else if (isStartAdjusted) {
                                 tagColor = { backgroundColor: "#ec4899", color: "#ffffff" }; // 濃いピンク
                               }
 
@@ -818,7 +821,15 @@ export function ShiftGrid({
                                       handleCastClick(day, s.castId, s.cast.name);
                                     }
                                   }}
-                                  title={isAdjusted && req ? `変更済: ${req.startTime}→${origStart} / ${req.endTime}→${origEnd}` : hasMemo ? `メモ: ${s.memo}` : displayName}
+                                  title={
+                                    isStartAdjusted && req
+                                      ? `出勤変更: ${formatTimeSlot(req.startTime)}→${formatTimeSlot(origStart)}${isEndAdjustedForTitle ? ` / 退勤: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : ""}`
+                                      : isEndAdjustedForTitle && req
+                                        ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}`
+                                        : hasMemo
+                                          ? `メモ: ${s.memo}`
+                                          : displayName
+                                  }
                                 >
                                   {displayName}
                                 </span>
@@ -860,7 +871,9 @@ export function ShiftGrid({
                               const req = data.shiftRequests?.find(
                                 (r) => r.castId === s.castId && r.dayId === day.id
                               );
-                              if (req && hideEndCastNameForWishEnd29(req.endTime)) {
+                              // 希望退勤29:00で実退勤も29:00（変更なし）の場合のみ名前を出さない。
+                              // 29:00希望でも 27:00 などにカットされた場合は、変更を示すため濃いグレーで表示する。
+                              if (req && hideEndCastNameForWishEnd29(req.endTime, origEnd)) {
                                 return null;
                               }
                               const isEndAdjusted = req && req.endTime !== origEnd;

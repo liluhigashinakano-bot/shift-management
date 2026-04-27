@@ -81,14 +81,18 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
             .filter((s) => s.isStart)
             .map((s) => s.cast.name)
             .join("\n");
-          // 退勤キャスト名（整数時退勤は :00 行に合わせる／希望退勤29:00は名前を出さない）
+          // 退勤キャスト名（整数時退勤は :00 行に合わせる／希望退勤29:00 かつ 実退勤も29:00 のときのみ名前を出さない）
           const endCasts = day.shiftSlots
             .filter(
               (s) =>
                 s.isEnd &&
                 displaySlotForClockOut(day.shiftSlots, s.castId) === slot,
             )
-            .filter((s) => !hideEndNameSet.has(`${s.castId}|${dateKey}`))
+            .filter((s) => {
+              // 希望29:00でも実退勤がカットされていればシートにも名前を出す
+              if (slot !== 29) return true;
+              return !hideEndNameSet.has(`${s.castId}|${dateKey}`);
+            })
             .map((s) => s.cast.name)
             .join("\n");
           // 人数
