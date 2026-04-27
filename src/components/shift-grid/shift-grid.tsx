@@ -1203,6 +1203,8 @@ function FieldEditModal({
             onChange={(e) => setValue(e.target.value)}
             placeholder={`${label}を入力`}
             autoFocus
+            autoComplete="off"
+            name={`${field}-${dayId}`}
           />
         </div>
       </div>

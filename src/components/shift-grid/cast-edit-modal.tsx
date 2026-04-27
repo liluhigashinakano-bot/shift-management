@@ -268,6 +268,8 @@ export function CastEditModal({
             onChange={(e) => setReason(e.target.value)}
             placeholder="人数調整、予算超過など"
             disabled={sheetEditBlocked}
+            autoComplete="off"
+            name="cast-edit-reason"
           />
         </div>
         <div className="flex justify-end gap-2">

@@ -95,6 +95,8 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={employeeOnDuty}
             onChange={(e) => setEmployeeOnDuty(e.target.value)}
+            autoComplete="off"
+            name={`employeeOnDuty-${day.id}`}
           />
         </div>
         <div className="space-y-1">
@@ -102,6 +104,8 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={eventName}
             onChange={(e) => setEventName(e.target.value)}
+            autoComplete="off"
+            name={`eventName-${day.id}`}
           />
         </div>
         <div className="space-y-1">
@@ -109,6 +113,8 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={expectedVisitors}
             onChange={(e) => setExpectedVisitors(e.target.value)}
+            autoComplete="off"
+            name={`expectedVisitors-${day.id}`}
           />
         </div>
         <div className="space-y-1">
@@ -116,6 +122,8 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
           <Input
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            autoComplete="off"
+            name={`notes-${day.id}`}
           />
         </div>
         <div className="flex justify-end gap-2">
