@@ -169,27 +169,31 @@ export async function POST(req: NextRequest) {
       await prisma.shiftSlot.createMany({ data: slots });
     }
 
-    // ShiftRequestも作成（元の時間を記録して、後で変更時に色を変えるため）
+    // ShiftRequest は「キャスト本人の希望（原本）」として保護する。
+    // 既存があれば、希望時間 / notes を上書きしない（addCast と editCast を対称にするため）。
+    // 存在しない場合のみ、後の差分カラー判定用に「元時間」として作成する。
     const day = await prisma.shiftDay.findUnique({
       where: { id: dayId },
       select: { date: true, periodId: true },
     });
     if (day) {
-      // 同じキャスト・同じ日の既存リクエストを削除してから作成
-      await prisma.shiftRequest.deleteMany({
+      const existingRequest = await prisma.shiftRequest.findFirst({
         where: { castId, periodId: day.periodId, date: day.date },
+        select: { id: true },
       });
-      await prisma.shiftRequest.create({
-        data: {
-          castId,
-          periodId: day.periodId,
-          date: day.date,
-          startTime: start,
-          endTime: end,
-          notes: memo || null,
-          status: "approved",
-        },
-      });
+      if (!existingRequest) {
+        await prisma.shiftRequest.create({
+          data: {
+            castId,
+            periodId: day.periodId,
+            date: day.date,
+            startTime: start,
+            endTime: end,
+            notes: memo || null,
+            status: "approved",
+          },
+        });
+      }
     }
 
     return NextResponse.json({ ok: true });
