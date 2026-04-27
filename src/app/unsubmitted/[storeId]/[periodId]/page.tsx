@@ -45,6 +45,34 @@ export default async function UnsubmittedCastsPage({
   // 未提出キャストのみ抽出
   const unsubmitted = storeCasts.filter((c) => !submittedSet.has(c.id));
 
+  // 各未提出キャストの最終操作日時（シフト希望の追加・編集の updatedAt を全期間横断で取得）
+  const unsubmittedIds = unsubmitted.map((c) => c.id);
+  const lastActivityRows =
+    unsubmittedIds.length > 0
+      ? await prisma.shiftRequest.groupBy({
+          by: ["castId"],
+          where: { castId: { in: unsubmittedIds } },
+          _max: { updatedAt: true },
+        })
+      : [];
+  const lastActivityMap = new Map<string, Date | null>(
+    lastActivityRows.map((r) => [r.castId, r._max.updatedAt ?? null]),
+  );
+
+  const formatJpDateTime = (d: Date): string => {
+    const fmt = new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    // ja-JP は "2026/05/01 14:30" 形式（month/day はゼロ埋め）
+    return fmt.format(d);
+  };
+
   const halfLabel = period.half === "first" ? "前半" : "後半";
 
   return (
@@ -94,25 +122,42 @@ export default async function UnsubmittedCastsPage({
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {unsubmitted.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3"
-                >
-                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700 sm:h-9 sm:w-9 sm:text-sm">
-                    {Array.from(c.name)[0] ?? "?"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-gray-900 sm:text-base">
-                      {c.name}
+              {unsubmitted.map((c) => {
+                const lastAt = lastActivityMap.get(c.id) ?? null;
+                return (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3"
+                  >
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700 sm:h-9 sm:w-9 sm:text-sm">
+                      {Array.from(c.name)[0] ?? "?"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-gray-900 sm:text-base">
+                        {c.name}
+                      </div>
+                      <div className="truncate text-[10px] text-gray-500 sm:text-xs">
+                        {c.castLoginId ? `ID: ${c.castLoginId}` : "ログインID未設定"}
+                        {c.hourlyRate ? ` ・ 時給 ${c.hourlyRate.toLocaleString()}円` : ""}
+                      </div>
                     </div>
-                    <div className="truncate text-[10px] text-gray-500 sm:text-xs">
-                      {c.castLoginId ? `ID: ${c.castLoginId}` : "ログインID未設定"}
-                      {c.hourlyRate ? ` ・ 時給 ${c.hourlyRate.toLocaleString()}円` : ""}
+                    <div className="shrink-0 text-right">
+                      <div className="text-[10px] text-gray-400 sm:text-[11px]">
+                        最終操作
+                      </div>
+                      {lastAt ? (
+                        <div className="font-mono text-[11px] tabular-nums text-gray-700 sm:text-xs">
+                          {formatJpDateTime(lastAt)}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] italic text-gray-400 sm:text-xs">
+                          履歴なし
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

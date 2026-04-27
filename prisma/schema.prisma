@@ -118,6 +118,8 @@ model ShiftRequest {
   status    String   @default("pending") // pending, approved, rejected, adjusted
   notes     String?
   createdAt DateTime @default(now())
+  /// 最終更新日時。@updatedAt で create/update のたびに自動更新される
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model ShiftAdjustment {
