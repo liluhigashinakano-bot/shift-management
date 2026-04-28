@@ -259,6 +259,7 @@ export async function POST(req: NextRequest) {
       where: { id: sourceDayId },
       select: {
         date: true,
+        periodId: true,
         period: { select: { year: true, month: true, half: true } },
       },
     });
@@ -296,9 +297,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const lockTarget = await assertStaffShiftPeriodNotFinalized(targetPeriod.id);
-    if (lockTarget) return lockTarget;
-
     const targetDay = await prisma.shiftDay.findFirst({
       where: { periodId: targetPeriod.id, date: sourceDay.date },
       select: { id: true },
@@ -310,10 +308,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // キャストの所属店舗（home）。同時刻に複数店舗には居られないので、
+    // ヘルプ出勤として追加先へ移すと同時に source / home 側の slot は除去する。
+    const cast = await prisma.user.findUnique({
+      where: { id: helpCastId },
+      select: { storeId: true },
+    });
+
+    let homeDayId: string | null = null;
+    let homePeriodId: string | null = null;
+    if (cast?.storeId && cast.storeId !== targetStore.id) {
+      const homePeriod = await prisma.shiftPeriod.findFirst({
+        where: {
+          storeId: cast.storeId,
+          year: sourceDay.period.year,
+          month: sourceDay.period.month,
+          half: sourceDay.period.half,
+        },
+        select: { id: true },
+      });
+      if (homePeriod) {
+        homePeriodId = homePeriod.id;
+        const homeDay = await prisma.shiftDay.findFirst({
+          where: { periodId: homePeriod.id, date: sourceDay.date },
+          select: { id: true },
+        });
+        if (homeDay) homeDayId = homeDay.id;
+      }
+    }
+
+    // 関係する全期間の確定ロックチェック（target / source / home）
+    const lockTarget = await assertStaffShiftPeriodNotFinalized(targetPeriod.id);
+    if (lockTarget) return lockTarget;
+    if (sourceDay.periodId !== targetPeriod.id) {
+      const lockSource = await assertStaffShiftPeriodNotFinalized(sourceDay.periodId);
+      if (lockSource) return lockSource;
+    }
+    if (
+      homePeriodId &&
+      homePeriodId !== sourceDay.periodId &&
+      homePeriodId !== targetPeriod.id
+    ) {
+      const lockHome = await assertStaffShiftPeriodNotFinalized(homePeriodId);
+      if (lockHome) return lockHome;
+    }
+
     const start = startTime as number;
     const end = endTime as number;
 
-    const slots: Array<{
+    const newSlots: Array<{
       dayId: string;
       timeSlot: number;
       castId: string;
@@ -322,7 +365,7 @@ export async function POST(req: NextRequest) {
       memo: string | null;
     }> = [];
     for (let t = start; t < end; t += 0.5) {
-      slots.push({
+      newSlots.push({
         dayId: targetDay.id,
         timeSlot: t,
         castId: helpCastId,
@@ -332,29 +375,47 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    await prisma.shiftSlot.deleteMany({ where: { dayId: targetDay.id, castId: helpCastId } });
-    if (slots.length > 0) {
-      await prisma.shiftSlot.createMany({ data: slots });
-    }
-
-    // ShiftRequest は addCast と同じく「原本があれば守る」方針
-    const existingRequest = await prisma.shiftRequest.findFirst({
-      where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
-      select: { id: true },
-    });
-    if (!existingRequest) {
-      await prisma.shiftRequest.create({
-        data: {
-          castId: helpCastId,
-          periodId: targetPeriod.id,
-          date: sourceDay.date,
-          startTime: start,
-          endTime: end,
-          notes: memo || null,
-          status: "approved",
-        },
+    // 一連のスロット入れ替えと希望生成は不可分にする
+    await prisma.$transaction(async (tx) => {
+      // 元店舗（modal を開いた dayId）の slot を削除
+      await tx.shiftSlot.deleteMany({
+        where: { dayId: sourceDayId, castId: helpCastId },
       });
-    }
+
+      // 本拠地店舗の同日 slot を削除（source と違う場合のみ）
+      if (homeDayId && homeDayId !== sourceDayId) {
+        await tx.shiftSlot.deleteMany({
+          where: { dayId: homeDayId, castId: helpCastId },
+        });
+      }
+
+      // 追加先 slot を作り直し
+      await tx.shiftSlot.deleteMany({
+        where: { dayId: targetDay.id, castId: helpCastId },
+      });
+      if (newSlots.length > 0) {
+        await tx.shiftSlot.createMany({ data: newSlots });
+      }
+
+      // 追加先側 ShiftRequest は addCast と同じく「原本があれば守る」
+      const existingRequest = await tx.shiftRequest.findFirst({
+        where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
+        select: { id: true },
+      });
+      if (!existingRequest) {
+        await tx.shiftRequest.create({
+          data: {
+            castId: helpCastId,
+            periodId: targetPeriod.id,
+            date: sourceDay.date,
+            startTime: start,
+            endTime: end,
+            notes: memo || null,
+            status: "approved",
+          },
+        });
+      }
+    });
 
     return NextResponse.json({ ok: true });
   }
