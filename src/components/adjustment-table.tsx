@@ -295,7 +295,7 @@ export function AdjustmentTable({
                               {showConfirmedText && isCurStart && isRemoteHelpRow && current && (
                                 <span className="inline-flex flex-col items-center gap-0 leading-[1.05]">
                                   <span className="font-bold text-rose-700">{formatTimeSlot(current.startTime)}</span>
-                                  <span className="text-[21px] font-semibold leading-none text-rose-700">{current.remoteStoreName}</span>
+                                  <span className="text-[10.5px] font-semibold leading-none text-rose-700">{current.remoteStoreName}</span>
                                 </span>
                               )}
                               {showConfirmedText && isCurStart && !isRemoteHelpRow && current && (
