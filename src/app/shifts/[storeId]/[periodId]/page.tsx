@@ -94,7 +94,10 @@ export default async function ShiftPage({
     },
   });
 
-  const helpInfo: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]> = {};
+  const helpInfo: Record<
+    string,
+    { castId: string; castName: string; storeName: string; startTime: number; endTime: number }[]
+  > = {};
   const dayMapForHelp = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
 
   for (const op of otherPeriods) {
@@ -114,6 +117,7 @@ export default async function ShiftPage({
         const castName = castNameMap.get(castId) || "不明";
         if (!helpInfo[myDayId]) helpInfo[myDayId] = [];
         helpInfo[myDayId].push({
+          castId,
           castName,
           storeName: op.store.name,
           startTime: Math.min(...slots),
