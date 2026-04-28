@@ -375,18 +375,71 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 一連のスロット入れ替えと希望生成は不可分にする
+    // 削除予定の元店舗・自店スロットを事前に取得（調整一覧へ「ヘルプ出勤」として
+    // 差分記録するため、deleteMany より前に元の出退勤時間を控えておく）。
+    const sourceExisting = await prisma.shiftSlot.findMany({
+      where: { dayId: sourceDayId, castId: helpCastId },
+      orderBy: { timeSlot: "asc" },
+      select: { timeSlot: true },
+    });
+    const homeExisting =
+      homeDayId && homeDayId !== sourceDayId
+        ? await prisma.shiftSlot.findMany({
+            where: { dayId: homeDayId, castId: helpCastId },
+            orderBy: { timeSlot: "asc" },
+            select: { timeSlot: true },
+          })
+        : [];
+
+    const adjustmentReason = `→ ${targetStoreName}`;
+
+    // 一連のスロット入れ替えと希望生成、調整記録は不可分にする
     await prisma.$transaction(async (tx) => {
       // 元店舗（modal を開いた dayId）の slot を削除
       await tx.shiftSlot.deleteMany({
         where: { dayId: sourceDayId, castId: helpCastId },
       });
 
+      // 元店舗側に既存スロットがあれば「ヘルプ出勤」として調整記録を残す
+      if (sourceExisting.length > 0) {
+        const originalStart = sourceExisting[0].timeSlot;
+        const originalEnd = sourceExisting[sourceExisting.length - 1].timeSlot + 0.5;
+        await tx.shiftAdjustment.create({
+          data: {
+            dayId: sourceDayId,
+            castId: helpCastId,
+            originalStart,
+            originalEnd,
+            adjustedStart: null,
+            adjustedEnd: null,
+            action: "help",
+            reason: adjustmentReason,
+          },
+        });
+      }
+
       // 本拠地店舗の同日 slot を削除（source と違う場合のみ）
       if (homeDayId && homeDayId !== sourceDayId) {
         await tx.shiftSlot.deleteMany({
           where: { dayId: homeDayId, castId: helpCastId },
         });
+
+        if (homeExisting.length > 0) {
+          const originalStart = homeExisting[0].timeSlot;
+          const originalEnd = homeExisting[homeExisting.length - 1].timeSlot + 0.5;
+          await tx.shiftAdjustment.create({
+            data: {
+              dayId: homeDayId,
+              castId: helpCastId,
+              originalStart,
+              originalEnd,
+              adjustedStart: null,
+              adjustedEnd: null,
+              action: "help",
+              reason: adjustmentReason,
+            },
+          });
+        }
       }
 
       // 追加先 slot を作り直し

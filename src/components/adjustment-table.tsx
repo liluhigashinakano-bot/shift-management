@@ -138,8 +138,9 @@ export function AdjustmentTable({
           </select>
         </div>
         <span className="shrink-0 whitespace-nowrap text-[10px] text-gray-500 sm:text-sm">
-          調整: {castAdjs.filter((a) => a.action !== "cut").length}件 / 削除:{" "}
-          {castAdjs.filter((a) => a.action === "cut").length}件
+          調整: {castAdjs.filter((a) => a.action !== "cut" && a.action !== "help").length}件
+          {" / "}ヘルプ: {castAdjs.filter((a) => a.action === "help").length}件
+          {" / "}削除: {castAdjs.filter((a) => a.action === "cut").length}件
         </span>
       </div>
 
@@ -207,6 +208,9 @@ export function AdjustmentTable({
                         const current = castCurrentShifts.get(day.id);
                         const dayAdj = adjByDay.get(day.id);
                         const isCut = dayAdj?.some((a) => a.action === "cut");
+                        const isHelp = dayAdj?.some((a) => a.action === "help");
+                        // 表示上、help は cut と同じく「この店舗からは消える」扱い
+                        const isRemoved = isCut || isHelp;
 
                         // 希望セル: この時間が希望範囲内か
                         const inRequest = req && slot >= req.startTime && slot < req.endTime;
@@ -215,7 +219,9 @@ export function AdjustmentTable({
 
                         // 希望セルの色
                         let reqBg = "";
-                        if (inRequest && isCut) {
+                        if (inRequest && isHelp) {
+                          reqBg = "bg-orange-100"; // ヘルプ出勤で外された希望
+                        } else if (inRequest && isCut) {
                           reqBg = "bg-red-100"; // 削除された希望
                         } else if (inRequest) {
                           reqBg = "bg-blue-100";
@@ -224,8 +230,8 @@ export function AdjustmentTable({
                         // 確定セルの色（公開後のみ）
                         let curBg = "";
                         if (showConfirmedShiftColumn) {
-                          if (isCut) {
-                            curBg = ""; // 削除済み→空
+                          if (isRemoved) {
+                            curBg = ""; // 削除/ヘルプ→空
                           } else if (inCurrent && inRequest) {
                             curBg = "bg-pink-100"; // 希望通り
                           } else if (inCurrent && !inRequest) {
@@ -259,7 +265,10 @@ export function AdjustmentTable({
                               {showConfirmedShiftColumn && inCurrent && !isCurStart && !isCurEnd && (
                                 <span className="text-pink-300">│</span>
                               )}
-                              {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (
+                              {showConfirmedShiftColumn && isHelp && inRequest && !inCurrent && (
+                                <span className="text-orange-500">→</span>
+                              )}
+                              {showConfirmedShiftColumn && isCut && !isHelp && inRequest && !inCurrent && (
                                 <span className="text-red-400">×</span>
                               )}
                             </td>
@@ -302,16 +311,27 @@ export function AdjustmentTable({
                     <td className="border border-gray-300 px-3 py-1.5 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-xs ${
                         a.action === "cut" ? "bg-red-100 text-red-700" :
+                        a.action === "help" ? "bg-orange-100 text-orange-700" :
                         a.action === "shorten" ? "bg-yellow-100 text-yellow-700" :
                         "bg-blue-100 text-blue-700"
                       }`}>
-                        {a.action === "cut" ? "カット" : a.action === "shorten" ? "短縮" : "時間変更"}
+                        {a.action === "cut"
+                          ? "カット"
+                          : a.action === "help"
+                            ? "ヘルプ出勤"
+                            : a.action === "shorten"
+                              ? "短縮"
+                              : "時間変更"}
                       </span>
                     </td>
                     <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      {a.action === "cut" ? "削除" :
-                        a.adjustedStart !== null && a.adjustedEnd !== null ?
-                        `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}` : "-"}
+                      {a.action === "cut"
+                        ? "削除"
+                        : a.action === "help"
+                          ? (a.reason || "-")
+                          : a.adjustedStart !== null && a.adjustedEnd !== null
+                            ? `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}`
+                            : "-"}
                     </td>
                     <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{a.reason || ""}</td>
                   </tr>
