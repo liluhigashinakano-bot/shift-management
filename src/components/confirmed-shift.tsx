@@ -128,8 +128,14 @@ export function ConfirmedShift({
   const mergedDays = useMemo(() => {
     return data.shiftDays.map((day) => {
       const helpSlots = helpSlotsByDay?.[day.id] || [];
+      const helpCastIds = new Set(helpSlots.map((h) => h.castId));
+      // 他店でヘルプ出勤しているキャストは、自店の実スロットは表示しない（変更後のヘルプ表示のみ）
+      const localSlots =
+        helpCastIds.size === 0
+          ? day.shiftSlots
+          : day.shiftSlots.filter((s) => !helpCastIds.has(s.castId));
       const mergedSlots = [
-        ...day.shiftSlots,
+        ...localSlots,
         ...helpSlots.map((h) => ({
           id: `help_${h.castId}_${h.timeSlot}`,
           timeSlot: h.timeSlot,

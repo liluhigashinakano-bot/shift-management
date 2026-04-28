@@ -109,28 +109,31 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  // ヘルプ情報を日付キーで整理: { "2026-03-31": [{ castName, storeName, start, end }] }
-  const helpInfo: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]> = {};
+  // ヘルプ情報（castId 付き）: 自店所属キャストが他店のシフトに入っている件。
+  // UI は同一キャストのローカル slot と二重表示しないよう castId で除外する。
+  const helpInfo: Record<
+    string,
+    { castId: string; castName: string; storeName: string; startTime: number; endTime: number }[]
+  > = {};
 
   for (const op of otherPeriods) {
     for (const opDay of op.shiftDays) {
       if (opDay.shiftSlots.length === 0) continue;
       const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
-      // このdateKeyに対応する自店舗のdayIdを探す
       const myDayId = dayMap.get(dateKey);
       if (!myDayId) continue;
 
-      // キャストごとに出退勤時間を計算
       const castSlots = new Map<string, number[]>();
       for (const slot of opDay.shiftSlots) {
         if (!castSlots.has(slot.castId)) castSlots.set(slot.castId, []);
         castSlots.get(slot.castId)!.push(slot.timeSlot);
       }
 
-      for (const [castId, slots] of castSlots) {
-        const castName = castNameMap.get(castId) || "不明";
+      for (const [cid, slots] of castSlots) {
+        const castName = castNameMap.get(cid) || "不明";
         if (!helpInfo[myDayId]) helpInfo[myDayId] = [];
         helpInfo[myDayId].push({
+          castId: cid,
           castName,
           storeName: op.store.name,
           startTime: Math.min(...slots),
@@ -158,7 +161,6 @@ export async function POST(req: NextRequest) {
     const start = startTime as number;
     const end = endTime as number;
 
-    // 対象日 + 期間 + 店舗を 1 度に取得（cross-store 判定にも使う）
     const day = await prisma.shiftDay.findUnique({
       where: { id: dayId },
       select: {
@@ -181,9 +183,6 @@ export async function POST(req: NextRequest) {
     const lockRes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockRes) return lockRes;
 
-    // キャスト所属店舗（home）。target がキャスト所属と異なれば「ヘルプ出勤」扱いとなり、
-    // home 側のスロットと同一日の slot を除去する（同時刻に複数店舗には居られない）。
-    // これは cast-add-dialog の「ヘルプ」タブからの addCast 経由でも適用される。
     const cast = await prisma.user.findUnique({
       where: { id: castId },
       select: { storeId: true },
@@ -192,8 +191,7 @@ export async function POST(req: NextRequest) {
     let homeDayId: string | null = null;
     let homePeriodId: string | null = null;
     let homeExisting: { timeSlot: number }[] = [];
-    const isCrossStore =
-      Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
+    const isCrossStore = Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
 
     if (isCrossStore && cast?.storeId) {
       const homePeriod = await prisma.shiftPeriod.findFirst({
@@ -207,7 +205,6 @@ export async function POST(req: NextRequest) {
       });
       if (homePeriod) {
         homePeriodId = homePeriod.id;
-        // home 側の確定ロックも事前にチェック
         if (homePeriodId !== day.periodId) {
           const lockHome = await assertStaffShiftPeriodNotFinalized(homePeriodId);
           if (lockHome) return lockHome;
@@ -249,17 +246,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 一連の処理（自店除去 → 調整記録 → target 入れ替え → 希望保護）を不可分に
     await prisma.$transaction(async (tx) => {
-      // ヘルプ追加なら自店の同日 slot を削除し、調整記録（action="help"）を残す
       if (homeDayId && homeDayId !== dayId) {
         await tx.shiftSlot.deleteMany({
           where: { dayId: homeDayId, castId },
         });
         if (homeExisting.length > 0) {
           const originalStart = homeExisting[0].timeSlot;
-          const originalEnd =
-            homeExisting[homeExisting.length - 1].timeSlot + 0.5;
+          const originalEnd = homeExisting[homeExisting.length - 1].timeSlot + 0.5;
           await tx.shiftAdjustment.create({
             data: {
               dayId: homeDayId,
@@ -275,14 +269,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // target 側 slot 入れ替え
       await tx.shiftSlot.deleteMany({ where: { dayId, castId } });
       if (newSlots.length > 0) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
 
-      // ShiftRequest は「キャスト本人の希望（原本）」として保護する。
-      // 既存があれば希望時間 / notes を上書きせず、無い場合のみ作成。
       const existingRequest = await tx.shiftRequest.findFirst({
         where: { castId, periodId: day.periodId, date: day.date },
         select: { id: true },
@@ -364,12 +355,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Target store not found" }, { status: 404 });
     }
 
-    // 対象店舗へのアクセス権チェック（admin は常に通る）
     if (!canAccessStore(session.user as SessionUserLike, targetStore.id)) {
       return NextResponse.json({ error: "Forbidden: target store" }, { status: 403 });
     }
 
-    // 同一の年/月/前後半 を持つ追加先期間を検索
     const targetPeriod = await prisma.shiftPeriod.findFirst({
       where: {
         storeId: targetStore.id,
@@ -397,19 +386,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // キャストの所属店舗（home）。同時刻に複数店舗には居られないので、
-    // ヘルプ出勤として追加先へ移すと同時に source / home 側の slot は除去する。
-    const cast = await prisma.user.findUnique({
+    const castUser = await prisma.user.findUnique({
       where: { id: helpCastId },
       select: { storeId: true },
     });
 
     let homeDayId: string | null = null;
     let homePeriodId: string | null = null;
-    if (cast?.storeId && cast.storeId !== targetStore.id) {
+    if (castUser?.storeId && castUser.storeId !== targetStore.id) {
       const homePeriod = await prisma.shiftPeriod.findFirst({
         where: {
-          storeId: cast.storeId,
+          storeId: castUser.storeId,
           year: sourceDay.period.year,
           month: sourceDay.period.month,
           half: sourceDay.period.half,
@@ -426,7 +413,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 関係する全期間の確定ロックチェック（target / source / home）
     const lockTarget = await assertStaffShiftPeriodNotFinalized(targetPeriod.id);
     if (lockTarget) return lockTarget;
     if (sourceDay.periodId !== targetPeriod.id) {
@@ -444,6 +430,22 @@ export async function POST(req: NextRequest) {
 
     const start = startTime as number;
     const end = endTime as number;
+
+    const sourceExisting = await prisma.shiftSlot.findMany({
+      where: { dayId: sourceDayId, castId: helpCastId },
+      orderBy: { timeSlot: "asc" },
+      select: { timeSlot: true },
+    });
+    const homeExisting =
+      homeDayId && homeDayId !== sourceDayId
+        ? await prisma.shiftSlot.findMany({
+            where: { dayId: homeDayId, castId: helpCastId },
+            orderBy: { timeSlot: "asc" },
+            select: { timeSlot: true },
+          })
+        : [];
+
+    const adjustmentReason = `→ ${targetStoreName}`;
 
     const newSlots: Array<{
       dayId: string;
@@ -464,32 +466,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 削除予定の元店舗・自店スロットを事前に取得（調整一覧へ「ヘルプ出勤」として
-    // 差分記録するため、deleteMany より前に元の出退勤時間を控えておく）。
-    const sourceExisting = await prisma.shiftSlot.findMany({
-      where: { dayId: sourceDayId, castId: helpCastId },
-      orderBy: { timeSlot: "asc" },
-      select: { timeSlot: true },
-    });
-    const homeExisting =
-      homeDayId && homeDayId !== sourceDayId
-        ? await prisma.shiftSlot.findMany({
-            where: { dayId: homeDayId, castId: helpCastId },
-            orderBy: { timeSlot: "asc" },
-            select: { timeSlot: true },
-          })
-        : [];
-
-    const adjustmentReason = `→ ${targetStoreName}`;
-
-    // 一連のスロット入れ替えと希望生成、調整記録は不可分にする
     await prisma.$transaction(async (tx) => {
-      // 元店舗（modal を開いた dayId）の slot を削除
       await tx.shiftSlot.deleteMany({
         where: { dayId: sourceDayId, castId: helpCastId },
       });
 
-      // 元店舗側に既存スロットがあれば「ヘルプ出勤」として調整記録を残す
       if (sourceExisting.length > 0) {
         const originalStart = sourceExisting[0].timeSlot;
         const originalEnd = sourceExisting[sourceExisting.length - 1].timeSlot + 0.5;
@@ -507,12 +488,10 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 本拠地店舗の同日 slot を削除（source と違う場合のみ）
       if (homeDayId && homeDayId !== sourceDayId) {
         await tx.shiftSlot.deleteMany({
           where: { dayId: homeDayId, castId: helpCastId },
         });
-
         if (homeExisting.length > 0) {
           const originalStart = homeExisting[0].timeSlot;
           const originalEnd = homeExisting[homeExisting.length - 1].timeSlot + 0.5;
@@ -531,7 +510,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 追加先 slot を作り直し
       await tx.shiftSlot.deleteMany({
         where: { dayId: targetDay.id, castId: helpCastId },
       });
@@ -539,7 +517,6 @@ export async function POST(req: NextRequest) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
 
-      // 追加先側 ShiftRequest は addCast と同じく「原本があれば守る」
       const existingRequest = await tx.shiftRequest.findFirst({
         where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
         select: { id: true },

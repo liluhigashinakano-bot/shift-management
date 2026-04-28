@@ -39,12 +39,22 @@ type ShiftRequest = {
   endTime: number;
 };
 
+type RemoteHelpShift = {
+  localDayId: string;
+  castId: string;
+  startTime: number;
+  endTime: number;
+  remoteStoreName: string;
+};
+
 type Props = {
   periodId: string;
   month: number;
   days: Day[];
   initialAdjustments: Adjustment[];
   shiftRequests: ShiftRequest[];
+  /** 自店舗日付に紐づく「他店で実際に入っているシフト」（確定列に店名付きで出す） */
+  remoteHelpShifts?: RemoteHelpShift[];
   adjustedCasts: Cast[];
   allCasts: Cast[];
   /** false のとき「確定」列は空（希望列のみ比較表示） */
@@ -57,12 +67,20 @@ function dayHeaderBg(dow: string): string {
   return "bg-purple-100/60 text-purple-800";
 }
 
+type CurrentShiftInfo = {
+  startTime: number;
+  endTime: number;
+  /** 他店ヘルプのとき確定列に併記 */
+  remoteStoreName?: string;
+};
+
 export function AdjustmentTable({
   periodId,
   month,
   days,
   initialAdjustments,
   shiftRequests,
+  remoteHelpShifts = [],
   adjustedCasts,
   allCasts,
   showConfirmedShiftColumn,
@@ -84,9 +102,9 @@ export function AdjustmentTable({
     return map;
   }, [shiftRequests, selectedCast]);
 
-  // 選択キャストの現在のシフト（shiftSlotsから）
+  // 選択キャストの現在のシフト（自店 slot が無ければ他店ヘルプの remoteHelpShifts を採用）
   const castCurrentShifts = useMemo(() => {
-    const map = new Map<string, { startTime: number; endTime: number }>();
+    const map = new Map<string, CurrentShiftInfo>();
     for (const day of days) {
       const castSlots = day.shiftSlots
         .filter((s) => s.castId === selectedCast)
@@ -96,10 +114,21 @@ export function AdjustmentTable({
           startTime: castSlots[0].timeSlot,
           endTime: castSlots[castSlots.length - 1].timeSlot + 0.5,
         });
+        continue;
+      }
+      const remote = remoteHelpShifts.find(
+        (r) => r.castId === selectedCast && r.localDayId === day.id,
+      );
+      if (remote) {
+        map.set(day.id, {
+          startTime: remote.startTime,
+          endTime: remote.endTime,
+          remoteStoreName: remote.remoteStoreName,
+        });
       }
     }
     return map;
-  }, [days, selectedCast]);
+  }, [days, selectedCast, remoteHelpShifts]);
 
   // 選択キャストの調整データ（dayIdでマッピング）
   const adjByDay = useMemo(() => {
@@ -209,33 +238,31 @@ export function AdjustmentTable({
                         const dayAdj = adjByDay.get(day.id);
                         const isCut = dayAdj?.some((a) => a.action === "cut");
                         const isHelp = dayAdj?.some((a) => a.action === "help");
-                        // 表示上、help は cut と同じく「この店舗からは消える」扱い
-                        const isRemoved = isCut || isHelp;
 
                         // 希望セル: この時間が希望範囲内か
                         const inRequest = req && slot >= req.startTime && slot < req.endTime;
-                        // 確定セル: この時間が現在のシフト範囲内か
+                        // 確定セル: この時間が現在のシフト範囲内か（他店ヘルプは remote の時間帯）
                         const inCurrent = current && slot >= current.startTime && slot < current.endTime;
 
                         // 希望セルの色
                         let reqBg = "";
                         if (inRequest && isHelp) {
-                          reqBg = "bg-orange-100"; // ヘルプ出勤で外された希望
+                          reqBg = "bg-orange-100";
                         } else if (inRequest && isCut) {
                           reqBg = "bg-red-100"; // 削除された希望
                         } else if (inRequest) {
                           reqBg = "bg-blue-100";
                         }
 
-                        // 確定セルの色（公開後のみ）
+                        // 確定セルの色（公開後のみ）。カットのみ空表示。ヘルプは他店の確定時間をピンクで表示
                         let curBg = "";
                         if (showConfirmedShiftColumn) {
-                          if (isRemoved) {
-                            curBg = ""; // 削除/ヘルプ→空
+                          if (isCut) {
+                            curBg = "";
                           } else if (inCurrent && inRequest) {
-                            curBg = "bg-pink-100"; // 希望通り
+                            curBg = "bg-pink-100";
                           } else if (inCurrent && !inRequest) {
-                            curBg = "bg-pink-300"; // 希望外の追加/変更
+                            curBg = "bg-pink-300";
                           }
                         }
 
@@ -253,11 +280,19 @@ export function AdjustmentTable({
                               {isReqEnd && !isReqStart && <span className="text-blue-500">{formatTimeSlot(req!.endTime)}</span>}
                               {inRequest && !isReqStart && !isReqEnd && <span className="text-blue-300">│</span>}
                               {isCut && isReqStart && <span className="line-through text-red-400 ml-0.5">削除</span>}
+                              {isHelp && isReqStart && !isCut && (
+                                <span className="text-orange-600 ml-0.5">ヘルプ</span>
+                              )}
                             </td>
                             {/* 確定セル */}
                             <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
                               {showConfirmedShiftColumn && isCurStart && (
-                                <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
+                                <span className="inline-flex flex-col items-center leading-tight">
+                                  <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
+                                  {current!.remoteStoreName ? (
+                                    <span className="text-[7px] font-medium text-pink-900">{current.remoteStoreName}</span>
+                                  ) : null}
+                                </span>
                               )}
                               {showConfirmedShiftColumn && isCurEnd && !isCurStart && (
                                 <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>
@@ -265,10 +300,7 @@ export function AdjustmentTable({
                               {showConfirmedShiftColumn && inCurrent && !isCurStart && !isCurEnd && (
                                 <span className="text-pink-300">│</span>
                               )}
-                              {showConfirmedShiftColumn && isHelp && inRequest && !inCurrent && (
-                                <span className="text-orange-500">→</span>
-                              )}
-                              {showConfirmedShiftColumn && isCut && !isHelp && inRequest && !inCurrent && (
+                              {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (
                                 <span className="text-red-400">×</span>
                               )}
                             </td>
@@ -302,6 +334,38 @@ export function AdjustmentTable({
               {castAdjs.map((a) => {
                 const d = new Date(a.day.date);
                 const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
+                const remote =
+                  a.action === "help"
+                    ? remoteHelpShifts.find(
+                        (r) => r.castId === a.castId && r.localDayId === a.dayId,
+                      )
+                    : undefined;
+                const actionLabel =
+                  a.action === "cut"
+                    ? "カット"
+                    : a.action === "shorten"
+                      ? "短縮"
+                      : a.action === "help"
+                        ? "ヘルプ"
+                        : "時間変更";
+                const actionClass =
+                  a.action === "cut"
+                    ? "bg-red-100 text-red-700"
+                    : a.action === "shorten"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : a.action === "help"
+                        ? "bg-orange-100 text-orange-800"
+                        : "bg-blue-100 text-blue-700";
+                const afterText =
+                  a.action === "cut"
+                    ? "削除"
+                    : a.action === "help" && remote
+                      ? `${formatTimeSlot(remote.startTime)}–${formatTimeSlot(remote.endTime)}（${remote.remoteStoreName}）`
+                      : a.action === "help"
+                        ? a.reason || "他店へ出勤"
+                        : a.adjustedStart !== null && a.adjustedEnd !== null
+                          ? `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}`
+                          : "-";
                 return (
                   <tr key={a.id} className="hover:bg-gray-50">
                     <td className="border border-gray-300 px-3 py-1.5">{dateStr}</td>
@@ -309,30 +373,11 @@ export function AdjustmentTable({
                       {formatTimeSlot(a.originalStart)} - {formatTimeSlot(a.originalEnd)}
                     </td>
                     <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${
-                        a.action === "cut" ? "bg-red-100 text-red-700" :
-                        a.action === "help" ? "bg-orange-100 text-orange-700" :
-                        a.action === "shorten" ? "bg-yellow-100 text-yellow-700" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>
-                        {a.action === "cut"
-                          ? "カット"
-                          : a.action === "help"
-                            ? "ヘルプ出勤"
-                            : a.action === "shorten"
-                              ? "短縮"
-                              : "時間変更"}
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${actionClass}`}>
+                        {actionLabel}
                       </span>
                     </td>
-                    <td className="border border-gray-300 px-3 py-1.5 text-center">
-                      {a.action === "cut"
-                        ? "削除"
-                        : a.action === "help"
-                          ? (a.reason || "-")
-                          : a.adjustedStart !== null && a.adjustedEnd !== null
-                            ? `${formatTimeSlot(a.adjustedStart)} - ${formatTimeSlot(a.adjustedEnd)}`
-                            : "-"}
-                    </td>
+                    <td className="border border-gray-300 px-3 py-1.5 text-center">{afterText}</td>
                     <td className="border border-gray-300 px-3 py-1.5 text-xs text-gray-500">{a.reason || ""}</td>
                   </tr>
                 );

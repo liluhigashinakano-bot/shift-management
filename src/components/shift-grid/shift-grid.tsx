@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   TIME_SLOTS,
   displaySlotForClockOut,
@@ -65,7 +65,11 @@ type Period = {
   /** true のときシフト確定済み（締切と同様に表・希望・調整系をロック） */
   adjustmentConfirmedPublished?: boolean;
   shiftRequests?: ShiftRequestInfo[];
-  helpInfo?: Record<string, { castName: string; storeName: string; startTime: number; endTime: number }[]>;
+  helpInfo?: Record<
+    string,
+    | { castName: string; storeName: string; startTime: number; endTime: number }[]
+    | { castId: string; castName: string; storeName: string; startTime: number; endTime: number }[]
+  >;
 };
 
 type Props = {
@@ -504,7 +508,23 @@ export function ShiftGrid({
     e.dataTransfer.dropEffect = "move";
   };
 
-  const days = data.shiftDays;
+  /** 他店ヘルプで出勤先が決まっているキャストは、自店の表示から除外（DB に古い slot が残っても二重表示しない） */
+  const gridShiftDays = useMemo(() => {
+    return data.shiftDays.map((day) => {
+      const raw = data.helpInfo?.[day.id] ?? [];
+      const away = new Set(
+        raw
+          .map((h) => ("castId" in h && h.castId ? h.castId : ""))
+          .filter(Boolean),
+      );
+      return {
+        ...day,
+        shiftSlots: away.size === 0 ? day.shiftSlots : day.shiftSlots.filter((s) => !away.has(s.castId)),
+      };
+    });
+  }, [data.shiftDays, data.helpInfo]);
+
+  const days = gridShiftDays;
   const DAYS_PER_TABLE = 8;
   const TIME_COL_WIDTH = 38; // 左の時刻列（px）
   const DAY_COL_WIDTH = 46 + 46 + 14 + 38; // 出勤/退勤/人数/メモ（px）

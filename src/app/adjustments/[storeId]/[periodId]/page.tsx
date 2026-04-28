@@ -125,13 +125,39 @@ export default async function AdjustmentsPage({
 
   const allShiftRequests = [...shiftRequests, ...otherShiftRequests];
 
-  // 他店舗のスロットを自店舗のdaysにマージ
+  /** 所属キャストが他店で実際に働いている時間（調整一覧「確定」列に店舗名付きで表示） */
+  type RemoteHelp = {
+    localDayId: string;
+    castId: string;
+    startTime: number;
+    endTime: number;
+    remoteStoreName: string;
+  };
+  const remoteHelpShifts: RemoteHelp[] = [];
+  const localDayByDate = new Map(
+    period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id] as const),
+  );
   for (const op of otherPeriods) {
     for (const opDay of op.shiftDays) {
+      if (opDay.shiftSlots.length === 0) continue;
       const dateKey = new Date(opDay.date).toISOString().slice(0, 10);
-      const myDay = period.shiftDays.find((d) => new Date(d.date).toISOString().slice(0, 10) === dateKey);
-      if (myDay && opDay.shiftSlots.length > 0) {
-        (myDay.shiftSlots as any[]).push(...opDay.shiftSlots);
+      const localDayId = localDayByDate.get(dateKey);
+      if (!localDayId) continue;
+      const byCast = new Map<string, typeof opDay.shiftSlots>();
+      for (const s of opDay.shiftSlots) {
+        if (!byCast.has(s.castId)) byCast.set(s.castId, []);
+        byCast.get(s.castId)!.push(s);
+      }
+      for (const [cid, sls] of byCast) {
+        if (!storeCastIds.includes(cid)) continue;
+        const tss = sls.map((x) => x.timeSlot);
+        remoteHelpShifts.push({
+          localDayId,
+          castId: cid,
+          startTime: Math.min(...tss),
+          endTime: Math.max(...tss) + 0.5,
+          remoteStoreName: op.store.name,
+        });
       }
     }
   }
@@ -160,8 +186,11 @@ export default async function AdjustmentsPage({
     orderBy: { name: "asc" },
   });
 
-  // 調整があるキャスト一覧
-  const adjustedCastIds = new Set(allAdjustments.map((a) => a.castId));
+  // 調整がある／他店でシフトに入っているキャスト一覧
+  const adjustedCastIds = new Set([
+    ...allAdjustments.map((a) => a.castId),
+    ...remoteHelpShifts.map((r) => r.castId),
+  ]);
   const adjustedCasts = allCasts.filter((c) => adjustedCastIds.has(c.id));
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
@@ -238,6 +267,7 @@ export default async function AdjustmentsPage({
           days={JSON.parse(JSON.stringify(period.shiftDays))}
           initialAdjustments={JSON.parse(JSON.stringify(allAdjustments))}
           shiftRequests={requestsByDayAndCast}
+          remoteHelpShifts={remoteHelpShifts}
           adjustedCasts={adjustedCasts.map((c) => ({
             id: c.id,
             name: c.name,
