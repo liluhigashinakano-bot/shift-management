@@ -255,15 +255,15 @@ export function AdjustmentTable({
                           reqBg = "bg-blue-100";
                         }
 
-                        // 確定セルの色（公開後のみ）。カットのみ空表示。ヘルプは他店の確定時間をピンクで表示
+                        // 確定セルの色。カットのみ空。帯は希望列と同様に inCurrent で塗る（公開後は希望との一致で濃淡）
                         let curBg = "";
-                        if (showConfirmedShiftColumn) {
-                          if (isCut) {
-                            curBg = "";
-                          } else if (inCurrent && inRequest) {
+                        if (isCut) {
+                          curBg = "";
+                        } else if (inCurrent) {
+                          if (showConfirmedShiftColumn && !inRequest) {
+                            curBg = "bg-pink-200";
+                          } else {
                             curBg = "bg-pink-100";
-                          } else if (inCurrent && !inRequest) {
-                            curBg = "bg-pink-300";
                           }
                         }
 
@@ -273,16 +273,13 @@ export function AdjustmentTable({
                         const isCurStart = inCurrent && current && slot === current.startTime;
                         const isCurEnd = inCurrent && current && slot + 0.5 >= current.endTime;
                         const isRemoteHelpRow = Boolean(current?.remoteStoreName);
-                        const remoteHelpLine =
-                          current?.remoteStoreName &&
-                          `${current.remoteStoreName}${formatTimeSlot(current.startTime)}～${formatTimeSlot(current.endTime)}`;
-                        /** 公開前でも「他店での実勤務」は調整一覧で見えるようにする（自店スロットの色付け比較は公開後のみ） */
+                        /** 公開前でも「他店での実勤務」は調整一覧で見える（色付き帯は上記 inCurrent） */
                         const showConfirmedText = Boolean(current);
 
                         return (
                           <React.Fragment key={day.id}>
                             {/* 希望セル */}
-                            <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${reqBg}`} style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}>
+                            <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center align-top ${reqBg}`} style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}>
                               {isReqStart && <span className="text-blue-700 font-bold">{formatTimeSlot(req!.startTime)}</span>}
                               {isReqEnd && !isReqStart && <span className="text-blue-500">{formatTimeSlot(req!.endTime)}</span>}
                               {inRequest && !isReqStart && !isReqEnd && <span className="text-blue-300">│</span>}
@@ -291,21 +288,24 @@ export function AdjustmentTable({
                                 <span className="text-orange-600 ml-0.5">ヘルプ</span>
                               )}
                             </td>
-                            {/* 確定セル */}
-                            <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                              {showConfirmedText && isCurStart && isRemoteHelpRow && remoteHelpLine && (
-                                <span className="inline-block max-w-[58px] break-words text-left text-[7px] font-semibold leading-tight text-pink-900">
-                                  {remoteHelpLine}
+                            {/* 確定セル：他店ヘルプは参考画像どおり「開始時刻 → 改行 → 店名」＋帯内に縦線＋終了時刻 */}
+                            <td
+                              className={`${hourBorder} px-0.5 py-0 text-[8px] text-center align-top ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
+                            >
+                              {showConfirmedText && isCurStart && isRemoteHelpRow && current && (
+                                <span className="inline-flex flex-col items-center gap-0 leading-[1.05]">
+                                  <span className="font-bold text-rose-700">{formatTimeSlot(current.startTime)}</span>
+                                  <span className="text-[7px] font-semibold text-rose-700">{current.remoteStoreName}</span>
                                 </span>
                               )}
-                              {showConfirmedText && isCurStart && !isRemoteHelpRow && (
-                                <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
+                              {showConfirmedText && isCurStart && !isRemoteHelpRow && current && (
+                                <span className="font-bold text-rose-700">{formatTimeSlot(current.startTime)}</span>
                               )}
-                              {showConfirmedText && isCurEnd && !isCurStart && !isRemoteHelpRow && (
-                                <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>
+                              {showConfirmedText && isCurEnd && !isCurStart && current && (
+                                <span className="text-rose-600">{formatTimeSlot(current.endTime)}</span>
                               )}
-                              {showConfirmedText && inCurrent && !isCurStart && !isCurEnd && !isRemoteHelpRow && (
-                                <span className="text-pink-300">│</span>
+                              {showConfirmedText && inCurrent && !isCurStart && !isCurEnd && (
+                                <span className="text-rose-300">│</span>
                               )}
                               {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (
                                 <span className="text-red-400">×</span>
