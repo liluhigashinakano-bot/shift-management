@@ -158,20 +158,88 @@ export async function POST(req: NextRequest) {
     const start = startTime as number;
     const end = endTime as number;
 
-    const dayForLock = await prisma.shiftDay.findUnique({
+    // 対象日 + 期間 + 店舗を 1 度に取得（cross-store 判定にも使う）
+    const day = await prisma.shiftDay.findUnique({
       where: { id: dayId },
-      select: { periodId: true },
+      select: {
+        date: true,
+        periodId: true,
+        period: {
+          select: {
+            year: true,
+            month: true,
+            half: true,
+            storeId: true,
+            store: { select: { name: true } },
+          },
+        },
+      },
     });
-    if (!dayForLock) {
+    if (!day) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
-    const lockRes = await assertStaffShiftPeriodNotFinalized(dayForLock.periodId);
+    const lockRes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockRes) return lockRes;
 
-    const slots = [];
+    // キャスト所属店舗（home）。target がキャスト所属と異なれば「ヘルプ出勤」扱いとなり、
+    // home 側のスロットと同一日の slot を除去する（同時刻に複数店舗には居られない）。
+    // これは cast-add-dialog の「ヘルプ」タブからの addCast 経由でも適用される。
+    const cast = await prisma.user.findUnique({
+      where: { id: castId },
+      select: { storeId: true },
+    });
 
+    let homeDayId: string | null = null;
+    let homePeriodId: string | null = null;
+    let homeExisting: { timeSlot: number }[] = [];
+    const isCrossStore =
+      Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
+
+    if (isCrossStore && cast?.storeId) {
+      const homePeriod = await prisma.shiftPeriod.findFirst({
+        where: {
+          storeId: cast.storeId,
+          year: day.period.year,
+          month: day.period.month,
+          half: day.period.half,
+        },
+        select: { id: true },
+      });
+      if (homePeriod) {
+        homePeriodId = homePeriod.id;
+        // home 側の確定ロックも事前にチェック
+        if (homePeriodId !== day.periodId) {
+          const lockHome = await assertStaffShiftPeriodNotFinalized(homePeriodId);
+          if (lockHome) return lockHome;
+        }
+        const homeDay = await prisma.shiftDay.findFirst({
+          where: { periodId: homePeriod.id, date: day.date },
+          select: { id: true },
+        });
+        if (homeDay) {
+          homeDayId = homeDay.id;
+          homeExisting = await prisma.shiftSlot.findMany({
+            where: { dayId: homeDay.id, castId },
+            orderBy: { timeSlot: "asc" },
+            select: { timeSlot: true },
+          });
+        }
+      }
+    }
+
+    const targetStoreName = day.period.store.name;
+    const adjustmentReason = `→ ${targetStoreName}`;
+
+    const newSlots: Array<{
+      dayId: string;
+      timeSlot: number;
+      castId: string;
+      isStart: boolean;
+      isEnd: boolean;
+      memo: string | null;
+    }> = [];
     for (let t = start; t < end; t += 0.5) {
-      slots.push({
+      newSlots.push({
         dayId,
         timeSlot: t,
         castId,
@@ -181,25 +249,46 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    await prisma.shiftSlot.deleteMany({ where: { dayId, castId } });
-    if (slots.length > 0) {
-      await prisma.shiftSlot.createMany({ data: slots });
-    }
+    // 一連の処理（自店除去 → 調整記録 → target 入れ替え → 希望保護）を不可分に
+    await prisma.$transaction(async (tx) => {
+      // ヘルプ追加なら自店の同日 slot を削除し、調整記録（action="help"）を残す
+      if (homeDayId && homeDayId !== dayId) {
+        await tx.shiftSlot.deleteMany({
+          where: { dayId: homeDayId, castId },
+        });
+        if (homeExisting.length > 0) {
+          const originalStart = homeExisting[0].timeSlot;
+          const originalEnd =
+            homeExisting[homeExisting.length - 1].timeSlot + 0.5;
+          await tx.shiftAdjustment.create({
+            data: {
+              dayId: homeDayId,
+              castId,
+              originalStart,
+              originalEnd,
+              adjustedStart: null,
+              adjustedEnd: null,
+              action: "help",
+              reason: adjustmentReason,
+            },
+          });
+        }
+      }
 
-    // ShiftRequest は「キャスト本人の希望（原本）」として保護する。
-    // 既存があれば、希望時間 / notes を上書きしない（addCast と editCast を対称にするため）。
-    // 存在しない場合のみ、後の差分カラー判定用に「元時間」として作成する。
-    const day = await prisma.shiftDay.findUnique({
-      where: { id: dayId },
-      select: { date: true, periodId: true },
-    });
-    if (day) {
-      const existingRequest = await prisma.shiftRequest.findFirst({
+      // target 側 slot 入れ替え
+      await tx.shiftSlot.deleteMany({ where: { dayId, castId } });
+      if (newSlots.length > 0) {
+        await tx.shiftSlot.createMany({ data: newSlots });
+      }
+
+      // ShiftRequest は「キャスト本人の希望（原本）」として保護する。
+      // 既存があれば希望時間 / notes を上書きせず、無い場合のみ作成。
+      const existingRequest = await tx.shiftRequest.findFirst({
         where: { castId, periodId: day.periodId, date: day.date },
         select: { id: true },
       });
       if (!existingRequest) {
-        await prisma.shiftRequest.create({
+        await tx.shiftRequest.create({
           data: {
             castId,
             periodId: day.periodId,
@@ -211,7 +300,7 @@ export async function POST(req: NextRequest) {
           },
         });
       }
-    }
+    });
 
     return NextResponse.json({ ok: true });
   }
