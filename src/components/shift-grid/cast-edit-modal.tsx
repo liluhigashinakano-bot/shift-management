@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,14 @@ type Props = {
   currentEnd: number;
   memo: string | null;
   periodId: string;
+  /** ヘルプ出勤タブで他店舗キャストを選択するための一覧 */
+  allCasts: { id: string; name: string; store: { name: string } | null }[];
+  /** 現在のシフト表の店舗名（=「自店」、ヘルプタブでは除外する） */
+  currentStoreName: string;
+  /** その日に既に配置されているキャストIDの一覧（重複追加防止） */
+  existingSlots: string[];
+  /** シフト希望の締切（ヘルプ追加もこの締切に従う） */
+  shiftRequestsLocked?: boolean;
   /** シフト表の追加・変更締切 */
   shiftSlotsLocked?: boolean;
   /** 「シフトを確定する」後 */
@@ -51,19 +59,48 @@ export function CastEditModal({
   currentEnd,
   memo,
   periodId,
+  allCasts,
+  currentStoreName,
+  existingSlots,
+  shiftRequestsLocked = false,
   shiftSlotsLocked = false,
   periodShiftConfirmed = false,
   onClose,
   onSaved,
 }: Props) {
   const sheetEditBlocked = shiftSlotsLocked || periodShiftConfirmed;
+  const helpAddBlocked = shiftRequestsLocked || shiftSlotsLocked || periodShiftConfirmed;
   const [mode, setMode] = useState<"menu" | "edit">("menu");
+  const [tab, setTab] = useState<"edit" | "help">("edit");
   const [newStart, setNewStart] = useState(currentStart.toString());
   const [newEnd, setNewEnd] = useState(currentEnd.toString());
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [requestInfo, setRequestInfo] = useState<RequestInfo>(null);
   const [loading, setLoading] = useState(true);
+
+  // ヘルプ出勤タブの状態（cast-add-dialog の help タブと同じ操作を提供）
+  const [helpStore, setHelpStore] = useState("");
+  const [helpCastId, setHelpCastId] = useState("");
+  const [helpStart, setHelpStart] = useState("20");
+  const [helpEnd, setHelpEnd] = useState("25");
+  const [helpMemo, setHelpMemo] = useState("");
+  const [helpSaving, setHelpSaving] = useState(false);
+
+  const otherStores = useMemo(() => {
+    const storeSet = new Set<string>();
+    for (const c of allCasts) {
+      if (c.store && c.store.name !== currentStoreName) {
+        storeSet.add(c.store.name);
+      }
+    }
+    return [...storeSet].sort();
+  }, [allCasts, currentStoreName]);
+
+  const helpFilteredCasts = useMemo(() => {
+    if (!helpStore) return [];
+    return allCasts.filter((c) => c.store?.name === helpStore);
+  }, [helpStore, allCasts]);
 
   // シフト希望情報を取得
   useEffect(() => {
@@ -99,39 +136,68 @@ export function CastEditModal({
   const handleDelete = async () => {
     if (sheetEditBlocked) return;
     setSaving(true);
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "removeCast",
-        dayId,
-        castId,
-        reason: reason || null,
-      }),
-    });
-    setSaving(false);
-    onSaved();
-    onClose();
+    try {
+      await fetch("/api/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "removeCast",
+          dayId,
+          castId,
+          reason: reason || null,
+        }),
+      });
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = async () => {
     if (sheetEditBlocked) return;
     setSaving(true);
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "editCast",
-        dayId,
-        castId,
-        newStart: parseFloat(newStart),
-        newEnd: parseFloat(newEnd),
-        reason: reason || null,
-      }),
-    });
-    setSaving(false);
-    onSaved();
-    onClose();
+    try {
+      await fetch("/api/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editCast",
+          dayId,
+          castId,
+          newStart: parseFloat(newStart),
+          newEnd: parseFloat(newEnd),
+          reason: reason || null,
+        }),
+      });
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleHelpAdd = async () => {
+    if (!helpCastId || helpAddBlocked) return;
+    setHelpSaving(true);
+    try {
+      await fetch("/api/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "addCast",
+          dayId,
+          castId: helpCastId,
+          startTime: parseFloat(helpStart),
+          endTime: parseFloat(helpEnd),
+          memo: helpMemo || null,
+        }),
+      });
+      onSaved();
+      onClose();
+    } finally {
+      setHelpSaving(false);
+    }
   };
 
   const currentHours = currentEnd - currentStart;
@@ -140,87 +206,228 @@ export function CastEditModal({
   if (mode === "menu") {
     return (
       <Modal open title={`${castName} - ${dayLabel}`} onClose={onClose}>
-        <div className="space-y-3 mb-4">
-          {shiftSlotsLocked && (
-            <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
-              シフト追加が締め切られているため、時間の変更・削除はできません。
-            </p>
-          )}
-          {periodShiftConfirmed && (
-            <p className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-              シフトが確定済みのため、時間の変更・削除はできません。シフト表の「シフトロック中」ボタンでロックを解除してください。
-            </p>
-          )}
-          {/* シフト希望情報 */}
-          {loading ? (
-            <div className="text-xs text-gray-400">読み込み中...</div>
-          ) : requestInfo ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 space-y-1.5">
-              <div className="text-[11px] font-bold text-blue-700">シフト希望（提出時）</div>
-              <div className="text-sm text-blue-800">
-                {formatTimeSlot(requestInfo.startTime)} 〜 {formatTimeSlot(requestInfo.endTime)}
-                <span className="text-xs text-blue-600 ml-1">
-                  （{requestInfo.endTime - requestInfo.startTime}h）
-                </span>
+        {/* タブ切り替え（時間編集モード中は表示しない） */}
+        <div className="flex border-b border-gray-300 mb-3 -mt-1">
+          <button
+            type="button"
+            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === "edit"
+                ? "border-purple-500 text-purple-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => setTab("edit")}
+          >
+            シフト編集
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === "help"
+                ? "border-orange-500 text-orange-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => setTab("help")}
+          >
+            ヘルプ出勤
+          </button>
+        </div>
+
+        {tab === "edit" ? (
+          <>
+            <div className="space-y-3 mb-4">
+              {shiftSlotsLocked && (
+                <p className="text-xs text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
+                  シフト追加が締め切られているため、時間の変更・削除はできません。
+                </p>
+              )}
+              {periodShiftConfirmed && (
+                <p className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                  シフトが確定済みのため、時間の変更・削除はできません。シフト表の「シフトロック中」ボタンでロックを解除してください。
+                </p>
+              )}
+              {/* シフト希望情報 */}
+              {loading ? (
+                <div className="text-xs text-gray-400">読み込み中...</div>
+              ) : requestInfo ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-2.5 space-y-1.5">
+                  <div className="text-[11px] font-bold text-blue-700">シフト希望（提出時）</div>
+                  <div className="text-sm text-blue-800">
+                    {formatTimeSlot(requestInfo.startTime)} 〜 {formatTimeSlot(requestInfo.endTime)}
+                    <span className="text-xs text-blue-600 ml-1">
+                      （{requestInfo.endTime - requestInfo.startTime}h）
+                    </span>
+                  </div>
+                  {requestInfo.notes && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1.5 text-xs text-yellow-800">
+                      <span className="font-bold">メモ: </span>{requestInfo.notes}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400 bg-gray-50 rounded p-2">シフト希望の登録なし（直接配置）</div>
+              )}
+
+              {/* 現在のシフト */}
+              <div className={`rounded-md p-2.5 space-y-1 ${hasChanged ? "bg-orange-50 border border-orange-200" : "bg-gray-50 border border-gray-200"}`}>
+                <div className="text-[11px] font-bold text-gray-700">
+                  現在のシフト
+                  {hasChanged && <span className="text-orange-600 ml-1">（希望から変更済）</span>}
+                </div>
+                <div className="text-sm text-gray-800">
+                  {formatTimeSlot(currentStart)} 〜 {formatTimeSlot(currentEnd)}
+                  <span className="text-xs text-gray-500 ml-1">（{currentHours}h）</span>
+                </div>
+                {hasChanged && requestInfo && (
+                  <div className="text-[10px] text-orange-600">
+                    差分: 出勤 {requestInfo.startTime !== currentStart ? `${formatTimeSlot(requestInfo.startTime)}→${formatTimeSlot(currentStart)}` : "変更なし"}
+                    {" / "}退勤 {requestInfo.endTime !== currentEnd ? `${formatTimeSlot(requestInfo.endTime)}→${formatTimeSlot(currentEnd)}` : "変更なし"}
+                  </div>
+                )}
               </div>
-              {requestInfo.notes && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1.5 text-xs text-yellow-800">
-                  <span className="font-bold">メモ: </span>{requestInfo.notes}
+
+              {/* メモ（出勤スロットのmemo） */}
+              {memo && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-2.5">
+                  <div className="text-[11px] font-bold text-yellow-800">希望メモ</div>
+                  <div className="text-sm text-yellow-900">{memo}</div>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="text-xs text-gray-400 bg-gray-50 rounded p-2">シフト希望の登録なし（直接配置）</div>
-          )}
 
-          {/* 現在のシフト */}
-          <div className={`rounded-md p-2.5 space-y-1 ${hasChanged ? "bg-orange-50 border border-orange-200" : "bg-gray-50 border border-gray-200"}`}>
-            <div className="text-[11px] font-bold text-gray-700">
-              現在のシフト
-              {hasChanged && <span className="text-orange-600 ml-1">（希望から変更済）</span>}
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="outline"
+                className="justify-start text-blue-600 border-blue-200 hover:bg-blue-50"
+                onClick={() => setMode("edit")}
+                disabled={sheetEditBlocked}
+              >
+                時間を編集
+              </Button>
+              <Button
+                variant="outline"
+                className="justify-start text-red-600 border-red-200 hover:bg-red-50"
+                onClick={handleDelete}
+                disabled={saving || sheetEditBlocked}
+              >
+                {saving ? "削除中..." : "シフトを削除（カット）"}
+              </Button>
+              <Button variant="outline" onClick={onClose}>
+                キャンセル
+              </Button>
             </div>
-            <div className="text-sm text-gray-800">
-              {formatTimeSlot(currentStart)} 〜 {formatTimeSlot(currentEnd)}
-              <span className="text-xs text-gray-500 ml-1">（{currentHours}h）</span>
-            </div>
-            {hasChanged && requestInfo && (
-              <div className="text-[10px] text-orange-600">
-                差分: 出勤 {requestInfo.startTime !== currentStart ? `${formatTimeSlot(requestInfo.startTime)}→${formatTimeSlot(currentStart)}` : "変更なし"}
-                {" / "}退勤 {requestInfo.endTime !== currentEnd ? `${formatTimeSlot(requestInfo.endTime)}→${formatTimeSlot(currentEnd)}` : "変更なし"}
-              </div>
+          </>
+        ) : (
+          // ヘルプ出勤タブ: 他店舗キャストをこの日に追加（cast-add-dialog の help タブと同等）
+          <div className="space-y-4">
+            {shiftRequestsLocked && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                シフト希望が締め切られているため、ここからの追加はできません。「締め切り解除」後に再度お試しください。
+              </p>
             )}
-          </div>
+            {shiftSlotsLocked && (
+              <p className="text-sm text-sky-900 bg-sky-50 border border-sky-200 rounded-md px-3 py-2">
+                シフト追加が締め切られているため、ここからの追加はできません。「シフト追加締切を解除」後に再度お試しください。
+              </p>
+            )}
+            {periodShiftConfirmed && (
+              <p className="text-sm text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                シフトが確定済みのため、ここからの追加はできません。シフト表の「シフトロック中」ボタンでロックを解除してから編集してください。
+              </p>
+            )}
 
-          {/* メモ（出勤スロットのmemo） */}
-          {memo && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-2.5">
-              <div className="text-[11px] font-bold text-yellow-800">希望メモ</div>
-              <div className="text-sm text-yellow-900">{memo}</div>
+            <div className="space-y-1">
+              <Label>店舗を選択</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                value={helpStore}
+                onChange={(e) => { setHelpStore(e.target.value); setHelpCastId(""); }}
+              >
+                <option value="">店舗を選択</option>
+                {otherStores.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
-          )}
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <Button
-            variant="outline"
-            className="justify-start text-blue-600 border-blue-200 hover:bg-blue-50"
-            onClick={() => setMode("edit")}
-            disabled={sheetEditBlocked}
-          >
-            時間を編集
-          </Button>
-          <Button
-            variant="outline"
-            className="justify-start text-red-600 border-red-200 hover:bg-red-50"
-            onClick={handleDelete}
-            disabled={saving || sheetEditBlocked}
-          >
-            {saving ? "削除中..." : "シフトを削除（カット）"}
-          </Button>
-          <Button variant="outline" onClick={onClose}>
-            キャンセル
-          </Button>
-        </div>
+            <div className="space-y-1">
+              <Label>キャスト</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                value={helpCastId}
+                onChange={(e) => setHelpCastId(e.target.value)}
+              >
+                <option value="">キャストを選択</option>
+                {helpFilteredCasts.map((cast) => {
+                  const isAssigned = existingSlots.includes(cast.id);
+                  return (
+                    <option key={cast.id} value={cast.id} disabled={isAssigned}>
+                      {cast.name}
+                      {isAssigned ? " [配置済]" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              {!helpStore && (
+                <p className="text-xs text-gray-400">先に店舗を選択してください</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>出勤時間</Label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={helpStart}
+                  onChange={(e) => setHelpStart(e.target.value)}
+                >
+                  {TIME_SLOTS.map((slot) => (
+                    <option key={slot} value={slot.toString()}>
+                      {formatTimeSlot(slot)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>退勤時間</Label>
+                <select
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  value={helpEnd}
+                  onChange={(e) => setHelpEnd(e.target.value)}
+                >
+                  {TIME_SLOTS.filter((s) => s > parseFloat(helpStart)).map((slot) => (
+                    <option key={slot} value={slot.toString()}>
+                      {formatTimeSlot(slot)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label>メモ（任意）</Label>
+              <Input
+                value={helpMemo}
+                onChange={(e) => setHelpMemo(e.target.value)}
+                placeholder="他店ヘルプ、当日対応など"
+                autoComplete="off"
+                name="cast-edit-help-memo"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={onClose}>
+                キャンセル
+              </Button>
+              <Button
+                onClick={handleHelpAdd}
+                disabled={!helpCastId || helpSaving || helpAddBlocked}
+                className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
+              >
+                {helpSaving ? "保存中..." : "追加"}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     );
   }
