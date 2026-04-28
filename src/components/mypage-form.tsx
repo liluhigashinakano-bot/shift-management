@@ -64,53 +64,55 @@ export function MypageForm({ userId, userName, storeName, periods, initialReques
     if (!selectedPeriod || !selectedDate) return;
     if (lockedForPeriod(selectedPeriod)) return;
     setSaving(true);
-    await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create",
-        castId: userId,
-        periodId: selectedPeriod,
-        date: selectedDate,
-        startTime: parseFloat(startTime),
-        endTime: parseFloat(endTime),
-        notes: notes || null,
-      }),
-    });
-    setSaving(false);
-    setAddModal(false);
-    setNotes("");
-    reload();
+    try {
+      await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          castId: userId,
+          periodId: selectedPeriod,
+          date: selectedDate,
+          startTime: parseFloat(startTime),
+          endTime: parseFloat(endTime),
+          notes: notes || null,
+        }),
+      });
+      setAddModal(false);
+      setNotes("");
+      await reload();
+    } finally {
+      // ネットワーク例外時もスピナーを必ず解除
+      setSaving(false);
+    }
   };
 
-  // 編集
+  // 編集: 旧実装は delete→create の 2 段階で、ネットワーク断などで delete だけ成功すると
+  // キャストの希望が消失していた。サーバー側に既にある update アクションで 1 リクエストに
+  // 統合し、DB 上のレコードを上書き更新する（id・createdAt は維持される）。
   const handleEdit = async () => {
     if (!editModal) return;
     if (lockedForPeriod(editModal.periodId)) return;
     setSaving(true);
-    // 既存を削除して再作成
-    await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", id: editModal.id }),
-    });
-    await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create",
-        castId: userId,
-        periodId: editModal.periodId,
-        date: editModal.date,
-        startTime: parseFloat(startTime),
-        endTime: parseFloat(endTime),
-        notes: notes || null,
-      }),
-    });
-    setSaving(false);
-    setEditModal(null);
-    setNotes("");
-    reload();
+    try {
+      await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          id: editModal.id,
+          date: editModal.date,
+          startTime: parseFloat(startTime),
+          endTime: parseFloat(endTime),
+          notes: notes || null,
+        }),
+      });
+      setEditModal(null);
+      setNotes("");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 削除
