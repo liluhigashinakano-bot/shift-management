@@ -26,12 +26,10 @@ type Props = {
   currentEnd: number;
   memo: string | null;
   periodId: string;
-  /** ヘルプ出勤タブで他店舗キャストを選択するための一覧 */
+  /** ヘルプ出勤タブで「追加先店舗」候補を作るための全キャスト一覧 */
   allCasts: { id: string; name: string; store: { name: string } | null }[];
-  /** 現在のシフト表の店舗名（=「自店」、ヘルプタブでは除外する） */
+  /** 現在のシフト表の店舗名（=「自店」、ヘルプタブでは追加先候補から除外する） */
   currentStoreName: string;
-  /** その日に既に配置されているキャストIDの一覧（重複追加防止） */
-  existingSlots: string[];
   /** シフト希望の締切（ヘルプ追加もこの締切に従う） */
   shiftRequestsLocked?: boolean;
   /** シフト表の追加・変更締切 */
@@ -61,7 +59,6 @@ export function CastEditModal({
   periodId,
   allCasts,
   currentStoreName,
-  existingSlots,
   shiftRequestsLocked = false,
   shiftSlotsLocked = false,
   periodShiftConfirmed = false,
@@ -79,28 +76,34 @@ export function CastEditModal({
   const [requestInfo, setRequestInfo] = useState<RequestInfo>(null);
   const [loading, setLoading] = useState(true);
 
-  // ヘルプ出勤タブの状態（cast-add-dialog の help タブと同じ操作を提供）
+  // ヘルプ出勤タブの状態:
+  //   このモーダルは特定キャスト（castName）のセルから開かれているので、
+  //   「誰を」送るかは固定。「どの店舗へ」だけ選んでもらう。
   const [helpStore, setHelpStore] = useState("");
-  const [helpCastId, setHelpCastId] = useState("");
-  const [helpStart, setHelpStart] = useState("20");
-  const [helpEnd, setHelpEnd] = useState("25");
+  const [helpStart, setHelpStart] = useState(currentStart.toString());
+  const [helpEnd, setHelpEnd] = useState(currentEnd.toString());
   const [helpMemo, setHelpMemo] = useState("");
   const [helpSaving, setHelpSaving] = useState(false);
+
+  // 追加先候補の店舗一覧:
+  //   現在のシフト表の店舗は除外（同店舗にヘルプ追加は無意味）。
+  //   キャスト所属店舗が判明していれば自店舗側からも除外しておく
+  //   （自店舗へヘルプとして追加する操作は通常意味を持たない）。
+  const homeStoreName = useMemo(() => {
+    return allCasts.find((c) => c.id === castId)?.store?.name ?? null;
+  }, [allCasts, castId]);
 
   const otherStores = useMemo(() => {
     const storeSet = new Set<string>();
     for (const c of allCasts) {
-      if (c.store && c.store.name !== currentStoreName) {
-        storeSet.add(c.store.name);
-      }
+      const name = c.store?.name;
+      if (!name) continue;
+      if (name === currentStoreName) continue;
+      if (homeStoreName && name === homeStoreName) continue;
+      storeSet.add(name);
     }
     return [...storeSet].sort();
-  }, [allCasts, currentStoreName]);
-
-  const helpFilteredCasts = useMemo(() => {
-    if (!helpStore) return [];
-    return allCasts.filter((c) => c.store?.name === helpStore);
-  }, [helpStore, allCasts]);
+  }, [allCasts, currentStoreName, homeStoreName]);
 
   // シフト希望情報を取得
   useEffect(() => {
@@ -178,21 +181,27 @@ export function CastEditModal({
   };
 
   const handleHelpAdd = async () => {
-    if (!helpCastId || helpAddBlocked) return;
+    if (!helpStore || helpAddBlocked) return;
     setHelpSaving(true);
     try {
-      await fetch("/api/shifts", {
+      const res = await fetch("/api/shifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "addCast",
-          dayId,
-          castId: helpCastId,
+          action: "addCastHelp",
+          sourceDayId: dayId,
+          targetStoreName: helpStore,
+          castId,
           startTime: parseFloat(helpStart),
           endTime: parseFloat(helpEnd),
           memo: helpMemo || null,
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "ヘルプ追加に失敗しました。");
+        return;
+      }
       onSaved();
       onClose();
     } finally {
@@ -317,7 +326,7 @@ export function CastEditModal({
             </div>
           </>
         ) : (
-          // ヘルプ出勤タブ: 他店舗キャストをこの日に追加（cast-add-dialog の help タブと同等）
+          // ヘルプ出勤タブ: このキャスト自身を別店舗のシフト表に追加する
           <div className="space-y-4">
             {shiftRequestsLocked && (
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
@@ -335,40 +344,24 @@ export function CastEditModal({
               </p>
             )}
 
+            <div className="bg-orange-50 border border-orange-200 rounded-md p-2.5 text-xs text-orange-900">
+              <span className="font-bold">{castName}</span> さんを別店舗のシフト表へヘルプ出勤として追加します。
+            </div>
+
             <div className="space-y-1">
-              <Label>店舗を選択</Label>
+              <Label>追加先の店舗</Label>
               <select
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                 value={helpStore}
-                onChange={(e) => { setHelpStore(e.target.value); setHelpCastId(""); }}
+                onChange={(e) => setHelpStore(e.target.value)}
               >
                 <option value="">店舗を選択</option>
                 {otherStores.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="space-y-1">
-              <Label>キャスト</Label>
-              <select
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                value={helpCastId}
-                onChange={(e) => setHelpCastId(e.target.value)}
-              >
-                <option value="">キャストを選択</option>
-                {helpFilteredCasts.map((cast) => {
-                  const isAssigned = existingSlots.includes(cast.id);
-                  return (
-                    <option key={cast.id} value={cast.id} disabled={isAssigned}>
-                      {cast.name}
-                      {isAssigned ? " [配置済]" : ""}
-                    </option>
-                  );
-                })}
-              </select>
-              {!helpStore && (
-                <p className="text-xs text-gray-400">先に店舗を選択してください</p>
+              {otherStores.length === 0 && (
+                <p className="text-xs text-gray-400">追加先となる他店舗がありません。</p>
               )}
             </div>
 
@@ -420,7 +413,7 @@ export function CastEditModal({
               </Button>
               <Button
                 onClick={handleHelpAdd}
-                disabled={!helpCastId || helpSaving || helpAddBlocked}
+                disabled={!helpStore || helpSaving || helpAddBlocked}
                 className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
               >
                 {helpSaving ? "保存中..." : "追加"}

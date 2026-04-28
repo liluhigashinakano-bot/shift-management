@@ -1164,9 +1164,6 @@ export function ShiftGrid({
           periodId={data.id}
           allCasts={allCasts}
           currentStoreName={data.store.name}
-          existingSlots={
-            data.shiftDays.find((d) => d.id === editTarget.dayId)?.shiftSlots.map((s) => s.castId) ?? []
-          }
           shiftRequestsLocked={effectiveReqLocked}
           shiftSlotsLocked={effectiveSlotLocked}
           periodShiftConfirmed={periodShiftConfirmed}

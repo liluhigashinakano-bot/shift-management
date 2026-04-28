@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
+import { canAccessStore, type SessionUserLike } from "@/lib/store-access";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -210,6 +211,149 @@ export async function POST(req: NextRequest) {
           },
         });
       }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  /**
+   * 自店舗のシフト表で開いた「キャスト編集モーダル」のヘルプ出勤タブから、
+   * 当該キャストを別店舗のシフト表へヘルプとして追加する。
+   *
+   * 入力:
+   *   sourceDayId   ... 自店舗側の ShiftDay.id（同一の年/月/前後半 を解決するため）
+   *   targetStoreName ... 追加先店舗の名称（Store.name は @unique）
+   *   castId        ... 追加するキャスト（自店舗・別店舗いずれでも可）
+   *   startTime/endTime/memo ... 通常の addCast と同じ
+   *
+   * 振る舞いは addCast と概ね同等で:
+   *   - 既存スロット（同 dayId × castId）を削除して 30 分刻みで再作成
+   *   - ShiftRequest が無ければ作成（既存があれば希望を上書きしない）
+   * 違いは「追加先 dayId をクライアントから受け取らず、サーバー側で
+   *   targetStoreName + sourceDay の年月半 + 同じ日付 を解決する」点。
+   */
+  if (action === "addCastHelp") {
+    const { sourceDayId, targetStoreName, startTime, endTime, memo } = body as {
+      sourceDayId?: string;
+      targetStoreName?: string;
+      startTime?: number;
+      endTime?: number;
+      memo?: string | null;
+    };
+    const helpCastId = castId as string | undefined;
+
+    if (!sourceDayId || !targetStoreName || !helpCastId) {
+      return NextResponse.json(
+        { error: "sourceDayId, targetStoreName, castId are required" },
+        { status: 400 },
+      );
+    }
+    if (typeof startTime !== "number" || typeof endTime !== "number" || endTime <= startTime) {
+      return NextResponse.json(
+        { error: "startTime / endTime are invalid" },
+        { status: 400 },
+      );
+    }
+
+    const sourceDay = await prisma.shiftDay.findUnique({
+      where: { id: sourceDayId },
+      select: {
+        date: true,
+        period: { select: { year: true, month: true, half: true } },
+      },
+    });
+    if (!sourceDay) {
+      return NextResponse.json({ error: "Source day not found" }, { status: 404 });
+    }
+
+    const targetStore = await prisma.store.findUnique({
+      where: { name: targetStoreName },
+      select: { id: true },
+    });
+    if (!targetStore) {
+      return NextResponse.json({ error: "Target store not found" }, { status: 404 });
+    }
+
+    // 対象店舗へのアクセス権チェック（admin は常に通る）
+    if (!canAccessStore(session.user as SessionUserLike, targetStore.id)) {
+      return NextResponse.json({ error: "Forbidden: target store" }, { status: 403 });
+    }
+
+    // 同一の年/月/前後半 を持つ追加先期間を検索
+    const targetPeriod = await prisma.shiftPeriod.findFirst({
+      where: {
+        storeId: targetStore.id,
+        year: sourceDay.period.year,
+        month: sourceDay.period.month,
+        half: sourceDay.period.half,
+      },
+      select: { id: true },
+    });
+    if (!targetPeriod) {
+      return NextResponse.json(
+        { error: "対象店舗の同期間のシフトが作成されていません。" },
+        { status: 404 },
+      );
+    }
+
+    const lockTarget = await assertStaffShiftPeriodNotFinalized(targetPeriod.id);
+    if (lockTarget) return lockTarget;
+
+    const targetDay = await prisma.shiftDay.findFirst({
+      where: { periodId: targetPeriod.id, date: sourceDay.date },
+      select: { id: true },
+    });
+    if (!targetDay) {
+      return NextResponse.json(
+        { error: "対象店舗で同日付のシフト日が見つかりません。" },
+        { status: 404 },
+      );
+    }
+
+    const start = startTime as number;
+    const end = endTime as number;
+
+    const slots: Array<{
+      dayId: string;
+      timeSlot: number;
+      castId: string;
+      isStart: boolean;
+      isEnd: boolean;
+      memo: string | null;
+    }> = [];
+    for (let t = start; t < end; t += 0.5) {
+      slots.push({
+        dayId: targetDay.id,
+        timeSlot: t,
+        castId: helpCastId,
+        isStart: t === start,
+        isEnd: t + 0.5 >= end,
+        memo: t === start ? (memo ?? null) : null,
+      });
+    }
+
+    await prisma.shiftSlot.deleteMany({ where: { dayId: targetDay.id, castId: helpCastId } });
+    if (slots.length > 0) {
+      await prisma.shiftSlot.createMany({ data: slots });
+    }
+
+    // ShiftRequest は addCast と同じく「原本があれば守る」方針
+    const existingRequest = await prisma.shiftRequest.findFirst({
+      where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
+      select: { id: true },
+    });
+    if (!existingRequest) {
+      await prisma.shiftRequest.create({
+        data: {
+          castId: helpCastId,
+          periodId: targetPeriod.id,
+          date: sourceDay.date,
+          startTime: start,
+          endTime: end,
+          notes: memo || null,
+          status: "approved",
+        },
+      });
     }
 
     return NextResponse.json({ ok: true });
