@@ -103,20 +103,10 @@ export function AdjustmentTable({
     return map;
   }, [shiftRequests, selectedCast]);
 
-  // 選択キャストの現在のシフト（自店 slot が無ければ他店ヘルプの remoteHelpShifts を採用）
+  // 確定は「実際に入っている勤務」。他店ヘルプがある日は自店にスロットが残っていても他店の実勤務を優先する
   const castCurrentShifts = useMemo(() => {
     const map = new Map<string, CurrentShiftInfo>();
     for (const day of days) {
-      const castSlots = day.shiftSlots
-        .filter((s) => s.castId === selectedCast)
-        .sort((a, b) => a.timeSlot - b.timeSlot);
-      if (castSlots.length > 0) {
-        map.set(day.id, {
-          startTime: castSlots[0].timeSlot,
-          endTime: castSlots[castSlots.length - 1].timeSlot + 0.5,
-        });
-        continue;
-      }
       const remote = remoteHelpShifts.find(
         (r) => r.castId === selectedCast && r.localDayId === day.id,
       );
@@ -125,6 +115,16 @@ export function AdjustmentTable({
           startTime: remote.startTime,
           endTime: remote.endTime,
           remoteStoreName: remote.remoteStoreName,
+        });
+        continue;
+      }
+      const castSlots = day.shiftSlots
+        .filter((s) => s.castId === selectedCast)
+        .sort((a, b) => a.timeSlot - b.timeSlot);
+      if (castSlots.length > 0) {
+        map.set(day.id, {
+          startTime: castSlots[0].timeSlot,
+          endTime: castSlots[castSlots.length - 1].timeSlot + 0.5,
         });
       }
     }
