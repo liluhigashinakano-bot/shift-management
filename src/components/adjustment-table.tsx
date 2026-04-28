@@ -93,12 +93,13 @@ export function AdjustmentTable({
     return adjustments.filter((a) => a.castId === selectedCast);
   }, [adjustments, selectedCast]);
 
-  // 選択キャストの希望データ（dayIdでマッピング）
+  // 選択キャストの希望データ（dayId でマッピング。同一 dayId の重複は先勝ち＝サーバーで自店優先済み）
   const castRequests = useMemo(() => {
     const map = new Map<string, { startTime: number; endTime: number }>();
-    shiftRequests.filter((r) => r.castId === selectedCast && r.dayId).forEach((r) => {
-      map.set(r.dayId!, { startTime: r.startTime, endTime: r.endTime });
-    });
+    for (const r of shiftRequests) {
+      if (r.castId !== selectedCast || !r.dayId) continue;
+      if (!map.has(r.dayId)) map.set(r.dayId, { startTime: r.startTime, endTime: r.endTime });
+    }
     return map;
   }, [shiftRequests, selectedCast]);
 
@@ -271,6 +272,12 @@ export function AdjustmentTable({
                         const isReqEnd = inRequest && req && slot + 0.5 >= req.endTime;
                         const isCurStart = inCurrent && current && slot === current.startTime;
                         const isCurEnd = inCurrent && current && slot + 0.5 >= current.endTime;
+                        const isRemoteHelpRow = Boolean(current?.remoteStoreName);
+                        const remoteHelpLine =
+                          current?.remoteStoreName &&
+                          `${current.remoteStoreName}${formatTimeSlot(current.startTime)}～${formatTimeSlot(current.endTime)}`;
+                        /** 公開前でも「他店での実勤務」は調整一覧で見えるようにする（自店スロットの色付け比較は公開後のみ） */
+                        const showConfirmedText = Boolean(current);
 
                         return (
                           <React.Fragment key={day.id}>
@@ -286,18 +293,18 @@ export function AdjustmentTable({
                             </td>
                             {/* 確定セル */}
                             <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}>
-                              {showConfirmedShiftColumn && isCurStart && (
-                                <span className="inline-flex flex-col items-center leading-tight">
-                                  <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
-                                  {current!.remoteStoreName ? (
-                                    <span className="text-[7px] font-medium text-pink-900">{current.remoteStoreName}</span>
-                                  ) : null}
+                              {showConfirmedText && isCurStart && isRemoteHelpRow && remoteHelpLine && (
+                                <span className="inline-block max-w-[58px] break-words text-left text-[7px] font-semibold leading-tight text-pink-900">
+                                  {remoteHelpLine}
                                 </span>
                               )}
-                              {showConfirmedShiftColumn && isCurEnd && !isCurStart && (
+                              {showConfirmedText && isCurStart && !isRemoteHelpRow && (
+                                <span className="text-pink-700 font-bold">{formatTimeSlot(current!.startTime)}</span>
+                              )}
+                              {showConfirmedText && isCurEnd && !isCurStart && !isRemoteHelpRow && (
                                 <span className="text-pink-500">{formatTimeSlot(current!.endTime)}</span>
                               )}
-                              {showConfirmedShiftColumn && inCurrent && !isCurStart && !isCurEnd && (
+                              {showConfirmedText && inCurrent && !isCurStart && !isCurEnd && !isRemoteHelpRow && (
                                 <span className="text-pink-300">│</span>
                               )}
                               {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (

@@ -123,8 +123,6 @@ export default async function AdjustmentsPage({
     select: { castId: true, date: true, startTime: true, endTime: true },
   });
 
-  const allShiftRequests = [...shiftRequests, ...otherShiftRequests];
-
   /** 所属キャストが他店で実際に働いている時間（調整一覧「確定」列に店舗名付きで表示） */
   type RemoteHelp = {
     localDayId: string;
@@ -173,12 +171,35 @@ export default async function AdjustmentsPage({
       }
     }
   }
-  const requestsByDayAndCast = allShiftRequests.map((r) => ({
-    castId: r.castId,
-    dayId: dayMap.get(new Date(r.date).toISOString().slice(0, 10)) || null,
-    startTime: r.startTime,
-    endTime: r.endTime,
-  }));
+  // 同一日付で自店舗 period の希望が他店 period（ヘルプ先に作られた希望など）で上書きされないよう、自店を最優先
+  const requestByCastAndDate = new Map<
+    string,
+    { castId: string; dayId: string; startTime: number; endTime: number }
+  >();
+  const toDateKey = (d: Date) => new Date(d).toISOString().slice(0, 10);
+  for (const r of otherShiftRequests) {
+    const dk = toDateKey(r.date);
+    const dayId = dayMap.get(dk);
+    if (!dayId) continue;
+    requestByCastAndDate.set(`${r.castId}|${dk}`, {
+      castId: r.castId,
+      dayId,
+      startTime: r.startTime,
+      endTime: r.endTime,
+    });
+  }
+  for (const r of shiftRequests) {
+    const dk = toDateKey(r.date);
+    const dayId = dayMap.get(dk);
+    if (!dayId) continue;
+    requestByCastAndDate.set(`${r.castId}|${dk}`, {
+      castId: r.castId,
+      dayId,
+      startTime: r.startTime,
+      endTime: r.endTime,
+    });
+  }
+  const requestsByDayAndCast = Array.from(requestByCastAndDate.values());
 
   const allCasts = await prisma.user.findMany({
     where: role === "cast" ? { id: userId } : { role: "cast" },
