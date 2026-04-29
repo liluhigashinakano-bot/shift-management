@@ -93,6 +93,25 @@ type EditTarget = {
   memo: string | null;
 };
 
+/** helpInfo の1日分から「他店でこの半日を占有」する castId×timeSlot（キャスト追加の重複判定用） */
+function helpAwayHalfSlotsFromDayHelp(
+  raw:
+    | { castName: string; storeName: string; startTime: number; endTime: number }[]
+    | { castId: string; castName: string; storeName: string; startTime: number; endTime: number }[]
+    | undefined,
+): { castId: string; timeSlot: number }[] {
+  if (!raw?.length) return [];
+  const out: { castId: string; timeSlot: number }[] = [];
+  for (const h of raw) {
+    const cid = "castId" in h && h.castId ? h.castId : "";
+    if (!cid) continue;
+    for (let t = h.startTime; t < h.endTime; t += 0.5) {
+      out.push({ castId: cid, timeSlot: t });
+    }
+  }
+  return out;
+}
+
 // 人数に応じた背景色（1〜15: 薄い水色→明るい紫、緩やかなグラデーション）
 const COUNT_COLORS: [string, string][] = [
   /* 0  */ ["", ""],
@@ -1167,9 +1186,13 @@ export function ShiftGrid({
           dayLabel={addDialog.dayLabel}
           allCasts={allCasts}
           currentStoreName={data.store.name}
-          existingSlots={
-            data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => s.castId) ?? []
+          existingDaySlots={
+            data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => ({
+              castId: s.castId,
+              timeSlot: s.timeSlot,
+            })) ?? []
           }
+          helpAwayHalfSlots={helpAwayHalfSlotsFromDayHelp(data.helpInfo?.[addDialog.dayId])}
           shiftRequestsLocked={effectiveReqLocked}
           shiftSlotsLocked={effectiveSlotLocked}
           periodShiftConfirmed={periodShiftConfirmed}

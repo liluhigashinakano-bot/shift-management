@@ -12,7 +12,10 @@ type Props = {
   dayLabel: string;
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   currentStoreName: string;
-  existingSlots: string[];
+  /** その日の自店スロット（重複チェック用）。時間帯が重ならなければ同じ日に再度追加可能 */
+  existingDaySlots: { castId: string; timeSlot: number }[];
+  /** 他店ヘルプでこの日占有している半日（自店DBに無い時間も重複扱い） */
+  helpAwayHalfSlots?: { castId: string; timeSlot: number }[];
   /** true のとき希望締切のため追加不可 */
   shiftRequestsLocked?: boolean;
   /** true のときシフト表の追加締切のため追加不可 */
@@ -28,7 +31,8 @@ export function CastAddDialog({
   dayLabel,
   allCasts,
   currentStoreName,
-  existingSlots,
+  existingDaySlots,
+  helpAwayHalfSlots = [],
   shiftRequestsLocked = false,
   shiftSlotsLocked = false,
   periodShiftConfirmed = false,
@@ -65,6 +69,24 @@ export function CastAddDialog({
   }, [tab, helpStore, allCasts, currentStoreName]);
 
   const addBlocked = shiftRequestsLocked || shiftSlotsLocked || periodShiftConfirmed;
+
+  const startNum = parseFloat(startTime);
+  const endNum = parseFloat(endTime);
+
+  /** 選択した [出勤, 退勤) と自店既存または他店ヘルプの占有が重なるキャストは追加不可 */
+  const overlapByCastId = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const c of filteredCasts) {
+      const hitLocal = existingDaySlots.some(
+        (s) => s.castId === c.id && s.timeSlot >= startNum && s.timeSlot < endNum,
+      );
+      const hitAway = helpAwayHalfSlots.some(
+        (s) => s.castId === c.id && s.timeSlot >= startNum && s.timeSlot < endNum,
+      );
+      m.set(c.id, hitLocal || hitAway);
+    }
+    return m;
+  }, [filteredCasts, existingDaySlots, helpAwayHalfSlots, startNum, endNum]);
 
   const handleSave = async () => {
     if (!castId || addBlocked) return;
@@ -157,11 +179,11 @@ export function CastAddDialog({
           >
             <option value="">キャストを選択</option>
             {filteredCasts.map((cast) => {
-              const isAssigned = existingSlots.includes(cast.id);
+              const overlaps = overlapByCastId.get(cast.id) ?? false;
               return (
-                <option key={cast.id} value={cast.id} disabled={isAssigned}>
+                <option key={cast.id} value={cast.id} disabled={overlaps}>
                   {cast.name}
-                  {isAssigned ? " [配置済]" : ""}
+                  {overlaps ? " [この時間帯は配置済]" : ""}
                 </option>
               );
             })}
