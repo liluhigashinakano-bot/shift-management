@@ -306,6 +306,9 @@ export async function POST(req: NextRequest) {
    *   castId        ... 追加するキャスト（自店舗・別店舗いずれでも可）
    *   startTime/endTime/memo ... 通常の addCast と同じ
    *
+   * 権限: sourceDay が属する店舗（開いているシフト表の店）にアクセスできること。
+   * 追加先店舗へのアクセスは不要（自店から他店へヘルプを登録する操作のため）。
+   *
    * 振る舞いは addCast と概ね同等で:
    *   - 既存スロット（同 dayId × castId）を削除して 30 分刻みで再作成
    *   - ShiftRequest が無ければ作成（既存があれば希望を上書きしない）
@@ -340,7 +343,7 @@ export async function POST(req: NextRequest) {
       select: {
         date: true,
         periodId: true,
-        period: { select: { year: true, month: true, half: true } },
+        period: { select: { year: true, month: true, half: true, storeId: true } },
       },
     });
     if (!sourceDay) {
@@ -355,8 +358,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Target store not found" }, { status: 404 });
     }
 
-    if (!canAccessStore(session.user as SessionUserLike, targetStore.id)) {
-      return NextResponse.json({ error: "Forbidden: target store" }, { status: 403 });
+    // 自店シフト表からのヘルプ登録が主用途のため、追加先店舗ではなく「操作している日の店舗」で権限を判定する
+    if (!canAccessStore(session.user as SessionUserLike, sourceDay.period.storeId)) {
+      return NextResponse.json(
+        { error: "Forbidden: source store" },
+        { status: 403 },
+      );
     }
 
     const targetPeriod = await prisma.shiftPeriod.findFirst({
