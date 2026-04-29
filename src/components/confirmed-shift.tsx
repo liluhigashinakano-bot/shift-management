@@ -443,6 +443,7 @@ export function ConfirmedShift({
           days={mergedDays}
           castId={selectedCast}
           month={data.month}
+          localStoreName={data.store.name}
           onClose={() => setShowSendList(false)}
         />
       )}
@@ -450,14 +451,38 @@ export function ConfirmedShift({
   );
 }
 
+/** 同一日・同一キャストのスロットを、ヘルプ帯／自店帯の切れ目で分割する */
+function segmentSlotsByHelpStore(slots: ShiftSlot[]): ShiftSlot[][] {
+  if (slots.length === 0) return [];
+  const sorted = [...slots].sort((a, b) => a.timeSlot - b.timeSlot);
+  const key = (s: ShiftSlot) => s._helpStore ?? "";
+  const out: ShiftSlot[][] = [];
+  let cur: ShiftSlot[] = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const s = sorted[i];
+    const contiguous = s.timeSlot - prev.timeSlot === 0.5 && key(s) === key(prev);
+    if (!contiguous) {
+      out.push(cur);
+      cur = [s];
+    } else {
+      cur.push(s);
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
 // 送付用一覧モーダル
 function SendListModal({
-  castName, days, castId, month, onClose,
+  castName, days, castId, month, localStoreName, onClose,
 }: {
   castName: string;
   days: ShiftDay[];
   castId: string;
   month: number;
+  /** 自店名（同日にヘルプと自店の両方があるとき、自店帯の行末に付ける） */
+  localStoreName: string;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -471,18 +496,26 @@ function SendListModal({
         .sort((a, b) => a.timeSlot - b.timeSlot);
       if (castSlots.length === 0) continue;
 
-      const startTime = castSlots[0].timeSlot;
-      const endTime = castSlots[castSlots.length - 1].timeSlot + 0.5;
       const d = new Date(day.date);
       const dateStr = `${month}月${d.getDate()}日(${getJapaneseDayOfWeek(d)})`;
-      const helpStores = [
-        ...new Set(castSlots.map((s) => s._helpStore).filter((x): x is string => Boolean(x))),
-      ];
-      const helpSuffix = helpStores.length > 0 ? `　${helpStores.join("・")}` : "";
-      lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}${helpSuffix}`);
+      const hasHelpOnDay = castSlots.some((s) => Boolean(s._helpStore));
+      const segments = segmentSlotsByHelpStore(castSlots);
+
+      for (const seg of segments) {
+        const startTime = seg[0].timeSlot;
+        const endTime = seg[seg.length - 1].timeSlot + 0.5;
+        const helpStore = seg[0]._helpStore;
+        let suffix = "";
+        if (helpStore) {
+          suffix = `　${helpStore}`;
+        } else if (hasHelpOnDay && localStoreName) {
+          suffix = `　${localStoreName}`;
+        }
+        lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}${suffix}`);
+      }
     }
     return lines.join("\n");
-  }, [days, castId, month]);
+  }, [days, castId, month, localStoreName]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
