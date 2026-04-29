@@ -508,18 +508,25 @@ export function ShiftGrid({
     e.dataTransfer.dropEffect = "move";
   };
 
-  /** 他店ヘルプで出勤先が決まっているキャストは、自店の表示から除外（DB に古い slot が残っても二重表示しない） */
+  /** 他店ヘルプで出勤先が決まっている半日スロットは、自店の同一刻のスロットを表示から除外 */
   const gridShiftDays = useMemo(() => {
     return data.shiftDays.map((day) => {
       const raw = data.helpInfo?.[day.id] ?? [];
-      const away = new Set(
-        raw
-          .map((h) => ("castId" in h && h.castId ? h.castId : ""))
-          .filter(Boolean),
-      );
+      const awayHalf = new Set<string>();
+      for (const h of raw) {
+        const cid = "castId" in h && h.castId ? h.castId : "";
+        if (!cid) continue;
+        const hi = h as { startTime: number; endTime: number };
+        for (let t = hi.startTime; t < hi.endTime; t += 0.5) {
+          awayHalf.add(`${cid}|${t}`);
+        }
+      }
       return {
         ...day,
-        shiftSlots: away.size === 0 ? day.shiftSlots : day.shiftSlots.filter((s) => !away.has(s.castId)),
+        shiftSlots:
+          awayHalf.size === 0
+            ? day.shiftSlots
+            : day.shiftSlots.filter((s) => !awayHalf.has(`${s.castId}|${s.timeSlot}`)),
       };
     });
   }, [data.shiftDays, data.helpInfo]);

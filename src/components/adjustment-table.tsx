@@ -67,11 +67,9 @@ function dayHeaderBg(dow: string): string {
   return "bg-purple-100/60 text-purple-800";
 }
 
-type CurrentShiftInfo = {
-  startTime: number;
-  endTime: number;
-  /** 他店ヘルプのとき確定列に併記 */
-  remoteStoreName?: string;
+type DayConfirmedCtx = {
+  remote?: RemoteHelpShift;
+  localSlots: ShiftSlot[];
 };
 
 export function AdjustmentTable({
@@ -103,30 +101,17 @@ export function AdjustmentTable({
     return map;
   }, [shiftRequests, selectedCast]);
 
-  // 確定は「実際に入っている勤務」。他店ヘルプがある日は自店にスロットが残っていても他店の実勤務を優先する
-  const castCurrentShifts = useMemo(() => {
-    const map = new Map<string, CurrentShiftInfo>();
+  /** 確定列: 他店ヘルプの時間帯と自店ローカル帯を同日に併存させる */
+  const dayConfirmedContext = useMemo(() => {
+    const map = new Map<string, DayConfirmedCtx>();
     for (const day of days) {
       const remote = remoteHelpShifts.find(
         (r) => r.castId === selectedCast && r.localDayId === day.id,
       );
-      if (remote) {
-        map.set(day.id, {
-          startTime: remote.startTime,
-          endTime: remote.endTime,
-          remoteStoreName: remote.remoteStoreName,
-        });
-        continue;
-      }
-      const castSlots = day.shiftSlots
+      const localSlots = day.shiftSlots
         .filter((s) => s.castId === selectedCast)
         .sort((a, b) => a.timeSlot - b.timeSlot);
-      if (castSlots.length > 0) {
-        map.set(day.id, {
-          startTime: castSlots[0].timeSlot,
-          endTime: castSlots[castSlots.length - 1].timeSlot + 0.5,
-        });
-      }
+      map.set(day.id, { remote, localSlots });
     }
     return map;
   }, [days, selectedCast, remoteHelpShifts]);
@@ -235,15 +220,30 @@ export function AdjustmentTable({
                       {week.map((day, dayIdx) => {
                         const isLast = dayIdx === week.length - 1;
                         const req = castRequests.get(day.id);
-                        const current = castCurrentShifts.get(day.id);
+                        const ctx = dayConfirmedContext.get(day.id)!;
+                        const { remote, localSlots } = ctx;
+                        const locStart = localSlots[0]?.timeSlot;
+                        const locEndEx =
+                          localSlots.length > 0
+                            ? localSlots[localSlots.length - 1].timeSlot + 0.5
+                            : null;
+                        const inRemote =
+                          remote != null &&
+                          slot >= remote.startTime &&
+                          slot < remote.endTime;
+                        const inLocal =
+                          locEndEx != null &&
+                          locStart != null &&
+                          slot >= locStart &&
+                          slot < locEndEx;
+                        const inCurrent = inRemote || inLocal;
+
                         const dayAdj = adjByDay.get(day.id);
                         const isCut = dayAdj?.some((a) => a.action === "cut");
                         const isHelp = dayAdj?.some((a) => a.action === "help");
 
                         // 希望セル: この時間が希望範囲内か
                         const inRequest = req && slot >= req.startTime && slot < req.endTime;
-                        // 確定セル: この時間が現在のシフト範囲内か（他店ヘルプは remote の時間帯）
-                        const inCurrent = current && slot >= current.startTime && slot < current.endTime;
 
                         // 希望セルの色
                         let reqBg = "";
@@ -267,14 +267,26 @@ export function AdjustmentTable({
                           }
                         }
 
-                        // 出勤/退勤マーク
                         const isReqStart = inRequest && req && slot === req.startTime;
                         const isReqEnd = inRequest && req && slot + 0.5 >= req.endTime;
-                        const isCurStart = inCurrent && current && slot === current.startTime;
-                        const isCurEnd = inCurrent && current && slot + 0.5 >= current.endTime;
-                        const isRemoteHelpRow = Boolean(current?.remoteStoreName);
-                        /** 公開前でも「他店での実勤務」は調整一覧で見える（色付き帯は上記 inCurrent） */
-                        const showConfirmedText = Boolean(current);
+
+                        const isRemoteStart =
+                          inRemote && remote && slot === remote.startTime;
+                        const isRemoteEnd =
+                          inRemote && remote && slot + 0.5 >= remote.endTime;
+                        const isLocalStart =
+                          inLocal && locStart != null && slot === locStart && !inRemote;
+                        const isLocalEnd =
+                          inLocal &&
+                          locEndEx != null &&
+                          slot + 0.5 >= locEndEx &&
+                          !inRemote;
+
+                        const hasConfirmed = Boolean(remote) || localSlots.length > 0;
+                        const showMidLine =
+                          hasConfirmed &&
+                          ((inRemote && !isRemoteStart && !isRemoteEnd) ||
+                            (inLocal && !inRemote && !isLocalStart && !isLocalEnd));
 
                         return (
                           <React.Fragment key={day.id}>
@@ -288,23 +300,26 @@ export function AdjustmentTable({
                                 <span className="text-orange-600 ml-0.5">ヘルプ</span>
                               )}
                             </td>
-                            {/* 確定セル：他店ヘルプは参考画像どおり「開始時刻 → 改行 → 店名」＋帯内に縦線＋終了時刻 */}
+                            {/* 確定セル：他店ヘルプ帯と自店帯を時間で切り替え */}
                             <td
                               className={`${hourBorder} px-0.5 py-0 text-[8px] text-center align-top ${curBg} ${!isLast ? "border-r-[3px] border-r-gray-500" : ""}`}
                             >
-                              {showConfirmedText && isCurStart && isRemoteHelpRow && current && (
+                              {hasConfirmed && isRemoteStart && remote && (
                                 <span className="inline-flex flex-col items-center gap-0 leading-[1.05]">
-                                  <span className="font-bold text-rose-700">{formatTimeSlot(current.startTime)}</span>
-                                  <span className="text-[10.5px] font-semibold leading-none text-rose-700">{current.remoteStoreName}</span>
+                                  <span className="font-bold text-rose-700">{formatTimeSlot(remote.startTime)}</span>
+                                  <span className="text-[10.5px] font-semibold leading-none text-rose-700">{remote.remoteStoreName}</span>
                                 </span>
                               )}
-                              {showConfirmedText && isCurStart && !isRemoteHelpRow && current && (
-                                <span className="font-bold text-rose-700">{formatTimeSlot(current.startTime)}</span>
+                              {hasConfirmed && isLocalStart && locStart != null && (
+                                <span className="font-bold text-rose-700">{formatTimeSlot(locStart)}</span>
                               )}
-                              {showConfirmedText && isCurEnd && !isCurStart && current && (
-                                <span className="text-rose-600">{formatTimeSlot(current.endTime)}</span>
+                              {hasConfirmed && isRemoteEnd && remote && !isRemoteStart && (
+                                <span className="text-rose-600">{formatTimeSlot(remote.endTime)}</span>
                               )}
-                              {showConfirmedText && inCurrent && !isCurStart && !isCurEnd && (
+                              {hasConfirmed && isLocalEnd && locEndEx != null && !isLocalStart && (
+                                <span className="text-rose-600">{formatTimeSlot(locEndEx)}</span>
+                              )}
+                              {hasConfirmed && showMidLine && (
                                 <span className="text-rose-300">│</span>
                               )}
                               {showConfirmedShiftColumn && isCut && inRequest && !inCurrent && (

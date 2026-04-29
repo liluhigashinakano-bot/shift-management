@@ -124,16 +124,15 @@ export function ConfirmedShift({
   const [showSendList, setShowSendList] = useState(false);
   const data = initialData;
 
-  // ヘルプスロットをマージしたデータ
+  // ヘルプスロットをマージ（他店の同一半日スロットと同じ刻の自店スロットだけ隠す。前後の自店帯は残す）
   const mergedDays = useMemo(() => {
     return data.shiftDays.map((day) => {
       const helpSlots = helpSlotsByDay?.[day.id] || [];
-      const helpCastIds = new Set(helpSlots.map((h) => h.castId));
-      // 他店でヘルプ出勤しているキャストは、自店の実スロットは表示しない（変更後のヘルプ表示のみ）
+      const helpSlotKeys = new Set(helpSlots.map((h) => `${h.castId}|${h.timeSlot}`));
       const localSlots =
-        helpCastIds.size === 0
+        helpSlots.length === 0
           ? day.shiftSlots
-          : day.shiftSlots.filter((s) => !helpCastIds.has(s.castId));
+          : day.shiftSlots.filter((s) => !helpSlotKeys.has(`${s.castId}|${s.timeSlot}`));
       const mergedSlots = [
         ...localSlots,
         ...helpSlots.map((h) => ({

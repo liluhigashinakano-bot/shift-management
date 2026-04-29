@@ -310,7 +310,8 @@ export async function POST(req: NextRequest) {
    * 追加先店舗へのアクセスは不要（自店から他店へヘルプを登録する操作のため）。
    *
    * 振る舞いは addCast と概ね同等で:
-   *   - 既存スロット（同 dayId × castId）を削除して 30 分刻みで再作成
+   *   - [startTime, endTime) の範囲だけ他店日にスロットを作成し、自店（および別 home 日）からは
+   *     その時間帯のスロットのみ削除（前後の帯は残す）。境界の isStart/isEnd を再計算する。
    *   - ShiftRequest が無ければ作成（既存があれば希望を上書きしない）
    * 違いは「追加先 dayId をクライアントから受け取らず、サーバー側で
    *   targetStoreName + sourceDay の年月半 + 同じ日付 を解決する」点。
@@ -473,14 +474,44 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const removedFromSource = sourceExisting.filter(
+      (s) => s.timeSlot >= start && s.timeSlot < end,
+    );
+
     await prisma.$transaction(async (tx) => {
+      const repairBoundaries = async (dId: string, cId: string) => {
+        const slots = await tx.shiftSlot.findMany({
+          where: { dayId: dId, castId: cId },
+          orderBy: { timeSlot: "asc" },
+          select: { id: true, timeSlot: true },
+        });
+        if (slots.length === 0) return;
+        const first = slots[0].timeSlot;
+        const last = slots[slots.length - 1].timeSlot;
+        const shiftEnd = last + 0.5;
+        for (const s of slots) {
+          await tx.shiftSlot.update({
+            where: { id: s.id },
+            data: {
+              isStart: s.timeSlot === first,
+              isEnd: s.timeSlot + 0.5 >= shiftEnd,
+            },
+          });
+        }
+      };
+
       await tx.shiftSlot.deleteMany({
-        where: { dayId: sourceDayId, castId: helpCastId },
+        where: {
+          dayId: sourceDayId,
+          castId: helpCastId,
+          timeSlot: { gte: start, lt: end },
+        },
       });
 
-      if (sourceExisting.length > 0) {
-        const originalStart = sourceExisting[0].timeSlot;
-        const originalEnd = sourceExisting[sourceExisting.length - 1].timeSlot + 0.5;
+      if (removedFromSource.length > 0) {
+        const originalStart = removedFromSource[0].timeSlot;
+        const originalEnd =
+          removedFromSource[removedFromSource.length - 1].timeSlot + 0.5;
         await tx.shiftAdjustment.create({
           data: {
             dayId: sourceDayId,
@@ -496,18 +527,25 @@ export async function POST(req: NextRequest) {
       }
 
       if (homeDayId && homeDayId !== sourceDayId) {
-        await tx.shiftSlot.deleteMany({
-          where: { dayId: homeDayId, castId: helpCastId },
-        });
-        if (homeExisting.length > 0) {
-          const originalStart = homeExisting[0].timeSlot;
-          const originalEnd = homeExisting[homeExisting.length - 1].timeSlot + 0.5;
+        const removedFromHome = homeExisting.filter(
+          (s) => s.timeSlot >= start && s.timeSlot < end,
+        );
+        if (removedFromHome.length > 0) {
+          await tx.shiftSlot.deleteMany({
+            where: {
+              dayId: homeDayId,
+              castId: helpCastId,
+              timeSlot: { gte: start, lt: end },
+            },
+          });
+          const ho0 = removedFromHome[0].timeSlot;
+          const ho1 = removedFromHome[removedFromHome.length - 1].timeSlot + 0.5;
           await tx.shiftAdjustment.create({
             data: {
               dayId: homeDayId,
               castId: helpCastId,
-              originalStart,
-              originalEnd,
+              originalStart: ho0,
+              originalEnd: ho1,
               adjustedStart: null,
               adjustedEnd: null,
               action: "help",
@@ -518,11 +556,21 @@ export async function POST(req: NextRequest) {
       }
 
       await tx.shiftSlot.deleteMany({
-        where: { dayId: targetDay.id, castId: helpCastId },
+        where: {
+          dayId: targetDay.id,
+          castId: helpCastId,
+          timeSlot: { gte: start, lt: end },
+        },
       });
       if (newSlots.length > 0) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
+
+      await repairBoundaries(sourceDayId, helpCastId);
+      if (homeDayId && homeDayId !== sourceDayId) {
+        await repairBoundaries(homeDayId, helpCastId);
+      }
+      await repairBoundaries(targetDay.id, helpCastId);
 
       const existingRequest = await tx.shiftRequest.findFirst({
         where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
