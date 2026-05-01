@@ -44,7 +44,7 @@ export function CastAddDialog({
   const [endTime, setEndTime] = useState("25");
   const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"own" | "help">("own");
+  const [tab, setTab] = useState<"own" | "help" | "trial">("own");
   const [helpStore, setHelpStore] = useState("");
 
   // 店舗一覧（現在の店舗以外）
@@ -58,14 +58,13 @@ export function CastAddDialog({
     return [...storeSet].sort();
   }, [allCasts, currentStoreName]);
 
-  // タブに応じたキャスト一覧
+  // タブに応じたキャスト一覧（体入は自店タブと同じ一覧・同じ追加処理）
   const filteredCasts = useMemo(() => {
-    if (tab === "own") {
+    if (tab === "own" || tab === "trial") {
       return allCasts.filter((c) => c.store?.name === currentStoreName);
-    } else {
-      if (!helpStore) return [];
-      return allCasts.filter((c) => c.store?.name === helpStore);
     }
+    if (!helpStore) return [];
+    return allCasts.filter((c) => c.store?.name === helpStore);
   }, [tab, helpStore, allCasts, currentStoreName]);
 
   const addBlocked = shiftRequestsLocked || shiftSlotsLocked || periodShiftConfirmed;
@@ -149,6 +148,17 @@ export function CastAddDialog({
             onClick={() => { setTab("help"); setCastId(""); }}
           >
             ヘルプ
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === "trial"
+                ? "border-purple-500 text-purple-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => { setTab("trial"); setCastId(""); }}
+          >
+            体入
           </button>
         </div>
 
