@@ -128,9 +128,10 @@ export function CastAddDialog({
           </p>
         )}
         {/* タブ切り替え */}
-        <div className="flex border-b border-gray-300">
+        <div className="flex flex-wrap gap-x-1 border-b border-gray-300">
           <button
-            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+            type="button"
+            className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "own"
                 ? "border-purple-500 text-purple-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
@@ -140,7 +141,8 @@ export function CastAddDialog({
             {currentStoreName}
           </button>
           <button
-            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+            type="button"
+            className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "help"
                 ? "border-orange-500 text-orange-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
@@ -151,7 +153,7 @@ export function CastAddDialog({
           </button>
           <button
             type="button"
-            className={`px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "trial"
                 ? "border-purple-500 text-purple-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
