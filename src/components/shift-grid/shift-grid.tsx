@@ -10,6 +10,7 @@ import {
   hideEndCastNameForWishEnd29,
   toUtcDateKey,
 } from "@/lib/shift-utils";
+import { castSuffixForShiftBadge } from "@/lib/cast-display-name";
 import { CastAddDialog } from "./cast-add-dialog";
 import { CastEditModal } from "./cast-edit-modal";
 import { DayInfoEditor } from "./day-info-editor";
@@ -20,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { ShiftPrintStyles } from "./shift-print-styles";
 import { AutoFitText } from "./auto-fit-text";
 
-type Cast = { id: string; name: string };
+type Cast = { id: string; name: string; isTrialGuest?: boolean };
 type ShiftSlot = {
   id: string;
   timeSlot: number;
@@ -88,6 +89,8 @@ type EditTarget = {
   dayDateIso: string;
   castId: string;
   castName: string;
+  /** 体入ゲスト（ヘルプ出勤タブは出さない） */
+  isTrialGuest?: boolean;
   currentStart: number;
   currentEnd: number;
   memo: string | null;
@@ -110,6 +113,17 @@ function helpAwayHalfSlotsFromDayHelp(
     }
   }
   return out;
+}
+
+/** 出勤・退勤タグの表示名（体入接頭辞・他店ヘルプの店名接頭辞） */
+function shiftTagDisplayName(
+  cast: Cast,
+  castInfo: { store?: { name: string } | null } | undefined,
+  localStoreName: string,
+): string {
+  const short = castSuffixForShiftBadge(cast);
+  const isHelp = castInfo?.store?.name && castInfo.store.name !== localStoreName;
+  return isHelp ? `${castInfo!.store!.name}${short}` : short;
 }
 
 // 人数に応じた背景色（1〜15: 薄い水色→明るい紫、緩やかなグラデーション）
@@ -232,6 +246,7 @@ export function ShiftGrid({
     dayLabel: string;
     /** UTC ベースの YYYY-MM-DD（cast-edit-modal に渡す） */
     dayDateIso: string;
+    isTrialGuest: boolean;
     currentStart: number;
     currentEnd: number;
   } | null>(null);
@@ -427,7 +442,7 @@ export function ShiftGrid({
     return () => window.removeEventListener("keydown", handler);
   }, [handleUndo, handleRedo]);
 
-  const handleCastClick = (day: ShiftDay, castId: string, castName: string) => {
+  const handleCastClick = (day: ShiftDay, castId: string, castName: string, isTrialGuest?: boolean) => {
     if (slotsLocked) return;
     const castSlots = day.shiftSlots
       .filter((s) => s.castId === castId)
@@ -446,6 +461,7 @@ export function ShiftGrid({
       dayDateIso,
       castId,
       castName,
+      isTrialGuest: Boolean(isTrialGuest),
       currentStart,
       currentEnd,
       memo,
@@ -863,10 +879,8 @@ export function ShiftGrid({
                               }}
                             >
                             {startCasts.map((s) => {
-                              // ヘルプ出勤: 所属店舗が現在のシフト表と異なる場合「店舗名+名前」
                               const castInfo = allCasts.find((c) => c.id === s.castId);
-                              const isHelp = castInfo?.store?.name && castInfo.store.name !== data.store.name;
-                              const displayName = isHelp ? `${castInfo!.store!.name}${s.cast.name}` : s.cast.name;
+                              const displayName = shiftTagDisplayName(s.cast, castInfo, data.store.name);
                               const nameLen = Array.from(displayName).length;
                               const nameFontSize = castNameTagFontSizePx(displayName, startTagWidthBudget);
                               const hasMemo = !!s.memo;
@@ -897,7 +911,7 @@ export function ShiftGrid({
                                 <span
                                   key={s.castId}
                                   draggable={!slotsLocked}
-                                  onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "start", origStart, origEnd)}
+                                  onDragStart={(e) => handleDragStart(e, day.id, s.castId, displayName, "start", origStart, origEnd)}
                                   style={{
                                     ...tagColor,
                                     fontSize: `${nameFontSize}px`,
@@ -910,17 +924,18 @@ export function ShiftGrid({
                                     if (hasMemo) {
                                       const dd = new Date(day.date);
                                       setMemoView({
-                                        castName: s.cast.name,
+                                        castName: displayName,
                                         memo: s.memo!,
                                         castId: s.castId,
                                         dayId: day.id,
                                         dayLabel: `${dd.getMonth() + 1}/${dd.getDate()}(${getJapaneseDayOfWeek(dd)})`,
                                         dayDateIso: toUtcDateKey(day.date),
+                                        isTrialGuest: Boolean(s.cast.isTrialGuest),
                                         currentStart: origStart,
                                         currentEnd: origEnd,
                                       });
                                     } else {
-                                      handleCastClick(day, s.castId, s.cast.name);
+                                      handleCastClick(day, s.castId, displayName, s.cast.isTrialGuest);
                                     }
                                   }}
                                   title={
@@ -961,8 +976,7 @@ export function ShiftGrid({
                             >
                             {endCasts.map((s) => {
                               const endCastInfo = allCasts.find((c) => c.id === s.castId);
-                              const endIsHelp = endCastInfo?.store?.name && endCastInfo.store.name !== data.store.name;
-                              const endDisplayName = endIsHelp ? `${endCastInfo!.store!.name}${s.cast.name}` : s.cast.name;
+                              const endDisplayName = shiftTagDisplayName(s.cast, endCastInfo, data.store.name);
                               const endNameLen = Array.from(endDisplayName).length;
                               const endNameFontSize = castNameTagFontSizePx(endDisplayName, endTagWidthBudget);
                               const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
@@ -987,7 +1001,7 @@ export function ShiftGrid({
                               <span
                                 key={s.castId}
                                 draggable={!slotsLocked}
-                                onDragStart={(e) => handleDragStart(e, day.id, s.castId, s.cast.name, "end", origStart, origEnd)}
+                                onDragStart={(e) => handleDragStart(e, day.id, s.castId, endDisplayName, "end", origStart, origEnd)}
                                 style={{
                                   ...endColor,
                                   fontSize: `${endNameFontSize}px`,
@@ -998,7 +1012,7 @@ export function ShiftGrid({
                                 title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
                                 onClick={() => {
                                   if (slotsLocked) return;
-                                  handleCastClick(day, s.castId, s.cast.name);
+                                  handleCastClick(day, s.castId, endDisplayName, s.cast.isTrialGuest);
                                 }}
                               >
                                 {endDisplayName}
@@ -1208,6 +1222,7 @@ export function ShiftGrid({
           dayDateIso={editTarget.dayDateIso}
           castId={editTarget.castId}
           castName={editTarget.castName}
+          isTrialGuest={Boolean(editTarget.isTrialGuest)}
           currentStart={editTarget.currentStart}
           currentEnd={editTarget.currentEnd}
           memo={editTarget.memo}
@@ -1235,6 +1250,7 @@ export function ShiftGrid({
               dayDateIso: memoView.dayDateIso,
               castId: memoView.castId,
               castName: memoView.castName,
+              isTrialGuest: memoView.isTrialGuest,
               currentStart: memoView.currentStart,
               currentEnd: memoView.currentEnd,
               memo: memoView.memo,
@@ -1344,6 +1360,8 @@ function MemoViewModal({
     castId: string;
     dayId: string;
     dayLabel: string;
+    dayDateIso: string;
+    isTrialGuest: boolean;
     currentStart: number;
     currentEnd: number;
   };

@@ -22,6 +22,8 @@ type Props = {
   dayDateIso: string;
   castId: string;
   castName: string;
+  /** 体入で追加した仮キャスト（ヘルプ出勤タブを出さない） */
+  isTrialGuest?: boolean;
   currentStart: number;
   currentEnd: number;
   memo: string | null;
@@ -53,6 +55,7 @@ export function CastEditModal({
   dayDateIso,
   castId,
   castName,
+  isTrialGuest = false,
   currentStart,
   currentEnd,
   memo,
@@ -104,6 +107,10 @@ export function CastEditModal({
     }
     return [...storeSet].sort();
   }, [allCasts, currentStoreName, homeStoreName]);
+
+  useEffect(() => {
+    if (isTrialGuest) setTab("edit");
+  }, [isTrialGuest, castId]);
 
   // シフト希望情報を取得
   useEffect(() => {
@@ -216,6 +223,7 @@ export function CastEditModal({
     return (
       <Modal open title={`${castName} - ${dayLabel}`} onClose={onClose}>
         {/* タブ切り替え（時間編集モード中は表示しない） */}
+        {!isTrialGuest && (
         <div className="flex border-b border-gray-300 mb-3 -mt-1">
           <button
             type="button"
@@ -240,8 +248,9 @@ export function CastEditModal({
             ヘルプ出勤
           </button>
         </div>
+        )}
 
-        {tab === "edit" ? (
+        {tab === "edit" || isTrialGuest ? (
           <>
             <div className="space-y-3 mb-4">
               {shiftSlotsLocked && (

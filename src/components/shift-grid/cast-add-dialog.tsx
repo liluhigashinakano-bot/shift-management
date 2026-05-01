@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import { TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-user";
 
 type Props = {
   dayId: string;
@@ -40,6 +41,7 @@ export function CastAddDialog({
   onSaved,
 }: Props) {
   const [castId, setCastId] = useState("");
+  const [trialGuestName, setTrialGuestName] = useState("");
   const [startTime, setStartTime] = useState("20");
   const [endTime, setEndTime] = useState("25");
   const [memo, setMemo] = useState("");
@@ -58,11 +60,12 @@ export function CastAddDialog({
     return [...storeSet].sort();
   }, [allCasts, currentStoreName]);
 
-  // タブに応じたキャスト一覧（体入は自店タブと同じ一覧・同じ追加処理）
+  // タブに応じたキャスト一覧（体入タブはテキスト入力のため未使用）
   const filteredCasts = useMemo(() => {
-    if (tab === "own" || tab === "trial") {
+    if (tab === "own") {
       return allCasts.filter((c) => c.store?.name === currentStoreName);
     }
+    if (tab === "trial") return [];
     if (!helpStore) return [];
     return allCasts.filter((c) => c.store?.name === helpStore);
   }, [tab, helpStore, allCasts, currentStoreName]);
@@ -87,21 +90,38 @@ export function CastAddDialog({
     return m;
   }, [filteredCasts, existingDaySlots, helpAwayHalfSlots, startNum, endNum]);
 
+  const canSubmit =
+    tab === "trial"
+      ? trialGuestName.trim().length > 0
+      : Boolean(castId);
+
   const handleSave = async () => {
-    if (!castId || addBlocked) return;
+    if (!canSubmit || addBlocked) return;
     setSaving(true);
+
+    const body =
+      tab === "trial"
+        ? {
+            action: "addCast",
+            dayId,
+            trialGuestName: trialGuestName.trim(),
+            startTime: parseFloat(startTime),
+            endTime: parseFloat(endTime),
+            memo: memo || null,
+          }
+        : {
+            action: "addCast",
+            dayId,
+            castId,
+            startTime: parseFloat(startTime),
+            endTime: parseFloat(endTime),
+            memo: memo || null,
+          };
 
     await fetch("/api/shifts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "addCast",
-        dayId,
-        castId,
-        startTime: parseFloat(startTime),
-        endTime: parseFloat(endTime),
-        memo: memo || null,
-      }),
+      body: JSON.stringify(body),
     });
 
     setSaving(false);
@@ -136,7 +156,11 @@ export function CastAddDialog({
                 ? "border-purple-500 text-purple-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
-            onClick={() => { setTab("own"); setCastId(""); }}
+            onClick={() => {
+              setTab("own");
+              setCastId("");
+              setTrialGuestName("");
+            }}
           >
             {currentStoreName}
           </button>
@@ -147,7 +171,11 @@ export function CastAddDialog({
                 ? "border-orange-500 text-orange-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
-            onClick={() => { setTab("help"); setCastId(""); }}
+            onClick={() => {
+              setTab("help");
+              setCastId("");
+              setTrialGuestName("");
+            }}
           >
             ヘルプ
           </button>
@@ -158,7 +186,11 @@ export function CastAddDialog({
                 ? "border-purple-500 text-purple-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
-            onClick={() => { setTab("trial"); setCastId(""); }}
+            onClick={() => {
+              setTab("trial");
+              setCastId("");
+              setTrialGuestName("");
+            }}
           >
             体入
           </button>
@@ -171,39 +203,59 @@ export function CastAddDialog({
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               value={helpStore}
-              onChange={(e) => { setHelpStore(e.target.value); setCastId(""); }}
+              onChange={(e) => {
+                setHelpStore(e.target.value);
+                setCastId("");
+              }}
             >
               <option value="">店舗を選択</option>
               {otherStores.map((name) => (
-                <option key={name} value={name}>{name}</option>
+                <option key={name} value={name}>
+                  {name}
+                </option>
               ))}
             </select>
           </div>
         )}
 
-        {/* キャスト選択 */}
-        <div className="space-y-1">
-          <Label>キャスト</Label>
-          <select
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-            value={castId}
-            onChange={(e) => setCastId(e.target.value)}
-          >
-            <option value="">キャストを選択</option>
-            {filteredCasts.map((cast) => {
-              const overlaps = overlapByCastId.get(cast.id) ?? false;
-              return (
-                <option key={cast.id} value={cast.id} disabled={overlaps}>
-                  {cast.name}
-                  {overlaps ? " [この時間帯は配置済]" : ""}
-                </option>
-              );
-            })}
-          </select>
-          {tab === "help" && !helpStore && (
-            <p className="text-xs text-gray-400">先に店舗を選択してください</p>
-          )}
-        </div>
+        {tab === "trial" ? (
+          <div className="space-y-1">
+            <Label>キャスト名（必須）</Label>
+            <Input
+              value={trialGuestName}
+              onChange={(e) => setTrialGuestName(e.target.value)}
+              placeholder="例: あい（表では「体入あい」と表示）"
+              maxLength={TRIAL_GUEST_NAME_MAX_LEN}
+              autoComplete="off"
+            />
+            <p className="text-xs text-gray-500">
+              登録キャストではなく自由入力です（最大{TRIAL_GUEST_NAME_MAX_LEN}文字）。シフト表では先頭に「体入」が付きます。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <Label>キャスト</Label>
+            <select
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              value={castId}
+              onChange={(e) => setCastId(e.target.value)}
+            >
+              <option value="">キャストを選択</option>
+              {filteredCasts.map((cast) => {
+                const overlaps = overlapByCastId.get(cast.id) ?? false;
+                return (
+                  <option key={cast.id} value={cast.id} disabled={overlaps}>
+                    {cast.name}
+                    {overlaps ? " [この時間帯は配置済]" : ""}
+                  </option>
+                );
+              })}
+            </select>
+            {tab === "help" && !helpStore && (
+              <p className="text-xs text-gray-400">先に店舗を選択してください</p>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
@@ -227,13 +279,11 @@ export function CastAddDialog({
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
             >
-              {TIME_SLOTS.filter((s) => s > parseFloat(startTime)).map(
-                (slot) => (
-                  <option key={slot} value={slot.toString()}>
-                    {formatTimeSlot(slot)}
-                  </option>
-                )
-              )}
+              {TIME_SLOTS.filter((s) => s > parseFloat(startTime)).map((slot) => (
+                <option key={slot} value={slot.toString()}>
+                  {formatTimeSlot(slot)}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -251,7 +301,7 @@ export function CastAddDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!castId || saving || addBlocked}
+            disabled={!canSubmit || saving || addBlocked}
             className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
           >
             {saving ? "保存中..." : "追加"}

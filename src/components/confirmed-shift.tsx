@@ -8,11 +8,12 @@ import {
   getJapaneseDayOfWeek,
   hideEndCastNameForWishEnd29,
 } from "@/lib/shift-utils";
+import { castSuffixForShiftBadge } from "@/lib/cast-display-name";
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { AutoFitText } from "@/components/shift-grid/auto-fit-text";
 
-type Cast = { id: string; name: string };
+type Cast = { id: string; name: string; isTrialGuest?: boolean };
 type ShiftSlot = {
   id: string;
   timeSlot: number;
@@ -44,7 +45,15 @@ type Period = {
   shiftDays: ShiftDay[];
 };
 
-type HelpSlot = { castId: string; castName: string; storeName: string; timeSlot: number; isStart: boolean; isEnd: boolean };
+type HelpSlot = {
+  castId: string;
+  castName: string;
+  isTrialGuest?: boolean;
+  storeName: string;
+  timeSlot: number;
+  isStart: boolean;
+  isEnd: boolean;
+};
 
 type Props = {
   initialData: Period;
@@ -143,7 +152,11 @@ export function ConfirmedShift({
           id: `help_${h.castId}_${h.timeSlot}`,
           timeSlot: h.timeSlot,
           castId: h.castId,
-          cast: { id: h.castId, name: h.castName },
+          cast: {
+            id: h.castId,
+            name: h.castName,
+            isTrialGuest: h.isTrialGuest,
+          },
           isStart: h.isStart,
           isEnd: h.isEnd,
           memo: null,
@@ -306,12 +319,12 @@ export function ConfirmedShift({
                                 {startCasts.map((s) => {
                                   const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
-                                  const isHelp = helpStore || (castInfo?.store?.name && castInfo.store.name !== data.store.name);
+                                  const short = castSuffixForShiftBadge(s.cast);
                                   const displayName = helpStore
-                                    ? `→${helpStore} ${s.cast.name}`
+                                    ? `→${helpStore} ${short}`
                                     : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
-                                      ? `${castInfo!.store!.name}${s.cast.name}`
-                                      : s.cast.name;
+                                      ? `${castInfo!.store!.name}${short}`
+                                      : short;
                                   const nameLen = Array.from(displayName).length;
                                   const nameFontSize = castNameTagFontSizePx(displayName, startTagWidthBudget);
                                   const tagBg = helpStore ? "#fef3c7" : "#fbcfe8"; // ヘルプ先は黄色系
@@ -363,11 +376,12 @@ export function ConfirmedShift({
                                   if (reqHide) return null;
                                   const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
+                                  const short = castSuffixForShiftBadge(s.cast);
                                   const displayName = helpStore
-                                    ? `→${helpStore} ${s.cast.name}`
+                                    ? `→${helpStore} ${short}`
                                     : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
-                                      ? `${castInfo!.store!.name}${s.cast.name}`
-                                      : s.cast.name;
+                                      ? `${castInfo!.store!.name}${short}`
+                                      : short;
                                   const nameLen = Array.from(displayName).length;
                                   const nameFontSize = castNameTagFontSizePx(displayName, endTagWidthBudget);
                                   return (

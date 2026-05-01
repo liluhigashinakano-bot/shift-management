@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 import { canAccessStore, type SessionUserLike } from "@/lib/store-access";
+import {
+  createTrialGuestUser,
+  parseTrialGuestName,
+  TRIAL_GUEST_NAME_MAX_LEN,
+} from "@/lib/trial-guest-user";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
         orderBy: { date: "asc" },
         include: {
           shiftSlots: {
-            include: { cast: { select: { id: true, name: true } } },
+            include: { cast: { select: { id: true, name: true, isTrialGuest: true } } },
             orderBy: { timeSlot: "asc" },
           },
         },
@@ -81,7 +86,7 @@ export async function GET(req: NextRequest) {
   // ヘルプ出勤情報: この店舗所属のキャストが他店舗のシフトに入っている情報を取得
   const storeId = period.storeId;
   const storeCasts = await prisma.user.findMany({
-    where: { storeId, role: "cast" },
+    where: { storeId, role: "cast", isTrialGuest: false },
     select: { id: true, name: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);
@@ -157,7 +162,12 @@ export async function POST(req: NextRequest) {
   const { action, dayId, castId } = body;
 
   if (action === "addCast") {
-    const { startTime, endTime, memo } = body;
+    const { startTime, endTime, memo, trialGuestName } = body as {
+      startTime?: number;
+      endTime?: number;
+      memo?: string | null;
+      trialGuestName?: string | null;
+    };
     const start = startTime as number;
     const end = endTime as number;
 
@@ -183,15 +193,33 @@ export async function POST(req: NextRequest) {
     const lockRes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockRes) return lockRes;
 
+    let effectiveCastId = castId as string | undefined;
+    if (trialGuestName != null && String(trialGuestName).trim() !== "") {
+      let trialName: string;
+      try {
+        trialName = parseTrialGuestName(trialGuestName);
+      } catch {
+        return NextResponse.json(
+          { error: `体入の名前は1〜${TRIAL_GUEST_NAME_MAX_LEN}文字で入力してください` },
+          { status: 400 },
+        );
+      }
+      const guest = await createTrialGuestUser(trialName, day.period.storeId);
+      effectiveCastId = guest.id;
+    } else if (!castId) {
+      return NextResponse.json({ error: "castId or trialGuestName is required" }, { status: 400 });
+    }
+
     const cast = await prisma.user.findUnique({
-      where: { id: castId },
+      where: { id: effectiveCastId },
       select: { storeId: true },
     });
 
     let homeDayId: string | null = null;
     let homePeriodId: string | null = null;
     let homeExisting: { timeSlot: number }[] = [];
-    const isCrossStore = Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
+    const isCrossStore =
+      Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
 
     if (isCrossStore && cast?.storeId) {
       const homePeriod = await prisma.shiftPeriod.findFirst({
@@ -216,7 +244,7 @@ export async function POST(req: NextRequest) {
         if (homeDay) {
           homeDayId = homeDay.id;
           homeExisting = await prisma.shiftSlot.findMany({
-            where: { dayId: homeDay.id, castId },
+            where: { dayId: homeDay.id, castId: effectiveCastId! },
             orderBy: { timeSlot: "asc" },
             select: { timeSlot: true },
           });
@@ -239,17 +267,17 @@ export async function POST(req: NextRequest) {
       newSlots.push({
         dayId,
         timeSlot: t,
-        castId,
+        castId: effectiveCastId!,
         isStart: t === start,
         isEnd: t + 0.5 >= end,
-        memo: t === start ? memo : null,
+        memo: t === start ? (memo ?? null) : null,
       });
     }
 
     await prisma.$transaction(async (tx) => {
       if (homeDayId && homeDayId !== dayId) {
         await tx.shiftSlot.deleteMany({
-          where: { dayId: homeDayId, castId },
+          where: { dayId: homeDayId, castId: effectiveCastId! },
         });
         if (homeExisting.length > 0) {
           const originalStart = homeExisting[0].timeSlot;
@@ -257,7 +285,7 @@ export async function POST(req: NextRequest) {
           await tx.shiftAdjustment.create({
             data: {
               dayId: homeDayId,
-              castId,
+              castId: effectiveCastId!,
               originalStart,
               originalEnd,
               adjustedStart: null,
@@ -269,19 +297,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      await tx.shiftSlot.deleteMany({ where: { dayId, castId } });
+      await tx.shiftSlot.deleteMany({ where: { dayId, castId: effectiveCastId! } });
       if (newSlots.length > 0) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
 
       const existingRequest = await tx.shiftRequest.findFirst({
-        where: { castId, periodId: day.periodId, date: day.date },
+        where: { castId: effectiveCastId!, periodId: day.periodId, date: day.date },
         select: { id: true },
       });
       if (!existingRequest) {
         await tx.shiftRequest.create({
           data: {
-            castId,
+            castId: effectiveCastId!,
             periodId: day.periodId,
             date: day.date,
             startTime: start,

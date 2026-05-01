@@ -29,7 +29,7 @@ export default async function UnsubmittedCastsPage({
 
   // 該当店舗所属のキャスト全員
   const storeCasts = await prisma.user.findMany({
-    where: { role: "cast", storeId },
+    where: { role: "cast", storeId, isTrialGuest: false },
     select: { id: true, name: true, castLoginId: true, hourlyRate: true },
     orderBy: { name: "asc" },
   });

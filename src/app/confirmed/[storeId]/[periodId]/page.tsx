@@ -7,6 +7,7 @@ import { CastPeriodSelector } from "@/components/cast-period-selector";
 import Link from "next/link";
 import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
 import { assertStorePageAccess } from "@/lib/store-access";
+import { castSuffixForShiftBadge } from "@/lib/cast-display-name";
 
 export default async function ConfirmedPage({
   params,
@@ -28,7 +29,7 @@ export default async function ConfirmedPage({
         orderBy: { date: "asc" },
         include: {
           shiftSlots: {
-            include: { cast: { select: { id: true, name: true } } },
+            include: { cast: { select: { id: true, name: true, isTrialGuest: true } } },
             orderBy: { timeSlot: "asc" },
           },
         },
@@ -66,7 +67,10 @@ export default async function ConfirmedPage({
   const castMap = new Map<string, string>();
   for (const day of period.shiftDays) {
     for (const slot of day.shiftSlots) {
-      castMap.set(slot.castId, slot.cast.name);
+      castMap.set(
+        slot.castId,
+        castSuffixForShiftBadge(slot.cast as { name: string; isTrialGuest?: boolean }),
+      );
     }
   }
 
@@ -74,7 +78,7 @@ export default async function ConfirmedPage({
   // staff: 店舗所属キャスト全員分
   // cast: 自分の分だけ
   const storeCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { storeId, role: "cast" },
+    where: role === "cast" ? { id: userId } : { storeId, role: "cast", isTrialGuest: false },
     select: { id: true, name: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);
@@ -94,7 +98,7 @@ export default async function ConfirmedPage({
         include: {
           shiftSlots: {
             where: { castId: { in: storeCastIds } },
-            include: { cast: { select: { id: true, name: true } } },
+            include: { cast: { select: { id: true, name: true, isTrialGuest: true } } },
             orderBy: { timeSlot: "asc" },
           },
         },
@@ -106,7 +110,15 @@ export default async function ConfirmedPage({
   // dayIdマッピング（同じ日付の自店舗dayId）
   const dayDateMap = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
 
-  type HelpSlot = { castId: string; castName: string; storeName: string; timeSlot: number; isStart: boolean; isEnd: boolean };
+  type HelpSlot = {
+    castId: string;
+    castName: string;
+    isTrialGuest?: boolean;
+    storeName: string;
+    timeSlot: number;
+    isStart: boolean;
+    isEnd: boolean;
+  };
   const helpSlotsByDay = new Map<string, HelpSlot[]>();
 
   for (const op of otherPeriods) {
@@ -118,10 +130,14 @@ export default async function ConfirmedPage({
 
       if (!helpSlotsByDay.has(myDayId)) helpSlotsByDay.set(myDayId, []);
       for (const slot of opDay.shiftSlots) {
-        castMap.set(slot.castId, slot.cast.name); // キャスト一覧にも追加
+        castMap.set(
+          slot.castId,
+          castSuffixForShiftBadge(slot.cast as { name: string; isTrialGuest?: boolean }),
+        ); // キャスト一覧にも追加
         helpSlotsByDay.get(myDayId)!.push({
           castId: slot.castId,
           castName: slot.cast.name,
+          isTrialGuest: Boolean((slot.cast as { isTrialGuest?: boolean }).isTrialGuest),
           storeName: op.store.name,
           timeSlot: slot.timeSlot,
           isStart: slot.isStart,
@@ -134,7 +150,7 @@ export default async function ConfirmedPage({
   const assignedCasts = [...castMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
   const allCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { role: "cast" },
+    where: role === "cast" ? { id: userId } : { role: "cast", isTrialGuest: false },
     include: { store: { select: { id: true, name: true } } },
     orderBy: { name: "asc" },
   });

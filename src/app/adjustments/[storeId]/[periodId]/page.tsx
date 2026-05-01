@@ -76,7 +76,7 @@ export default async function AdjustmentsPage({
 
   // 所属キャストの他店舗での調整も取得
   const storeCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { storeId, role: "cast" },
+    where: role === "cast" ? { id: userId } : { storeId, role: "cast", isTrialGuest: false },
     select: { id: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);
@@ -202,7 +202,7 @@ export default async function AdjustmentsPage({
   const requestsByDayAndCast = Array.from(requestByCastAndDate.values());
 
   const allCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { role: "cast" },
+    where: role === "cast" ? { id: userId } : { role: "cast", isTrialGuest: false },
     include: { store: { select: { name: true } } },
     orderBy: { name: "asc" },
   });

@@ -13,7 +13,7 @@ export default async function StoresPage() {
 
   const stores = await prisma.store.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { users: { where: { role: "cast" } } } } },
+    include: { _count: { select: { users: { where: { role: "cast", isTrialGuest: false } } } } },
   });
 
   return (

@@ -33,6 +33,8 @@ model User {
   store        Store?   @relation(fields: [storeId], references: [id])
   /// true のとき店舗制限なし（管理者に付与可。従業員/閲覧者の「全店舗」選択時）
   accessAllStores Boolean @default(false)
+  /// 体入などシフト表からだけ使う仮キャスト（キャスト一覧・未提出一覧などから除外）
+  isTrialGuest Boolean @default(false)
   createdAt    DateTime @default(now())
 
   shiftSlots      ShiftSlot[]

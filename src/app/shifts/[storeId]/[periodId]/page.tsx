@@ -32,7 +32,7 @@ export default async function ShiftPage({
         orderBy: { date: "asc" },
         include: {
           shiftSlots: {
-            include: { cast: { select: { id: true, name: true } } },
+            include: { cast: { select: { id: true, name: true, isTrialGuest: true } } },
             orderBy: { timeSlot: "asc" },
           },
         },
@@ -45,7 +45,7 @@ export default async function ShiftPage({
   assertStorePageAccess(session.user as any, storeId);
 
   const allCasts = await prisma.user.findMany({
-    where: { role: "cast" },
+    where: { role: "cast", isTrialGuest: false },
     include: { store: { select: { id: true, name: true } } },
     orderBy: { name: "asc" },
   });
@@ -67,7 +67,7 @@ export default async function ShiftPage({
 
   // ヘルプ出勤情報: この店舗所属のキャストが他店舗のシフトに入っている情報
   const storeCasts = await prisma.user.findMany({
-    where: { storeId, role: "cast" },
+    where: { storeId, role: "cast", isTrialGuest: false },
     select: { id: true, name: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);

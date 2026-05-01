@@ -160,7 +160,7 @@ export async function syncFromSheets(periodId: string): Promise<{ success: boole
 
     // キャスト名 → IDのマッピングを構築
     const allCasts = await prisma.user.findMany({
-      where: { role: "cast" },
+      where: { role: "cast", isTrialGuest: false },
       select: { id: true, name: true },
     });
     const castMap = new Map(allCasts.map((c) => [c.name, c.id]));

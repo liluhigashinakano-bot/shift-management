@@ -91,7 +91,7 @@ export default async function RequestsPage({
 
     // この店舗所属キャストの他店舗での希望
     const storeCasts = await prisma.user.findMany({
-      where: { storeId, role: "cast" },
+      where: { storeId, role: "cast", isTrialGuest: false },
       select: { id: true },
     });
     const storeCastIds = storeCasts.map((c) => c.id);
@@ -147,7 +147,7 @@ export default async function RequestsPage({
   );
 
   const allCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { role: "cast" },
+    where: role === "cast" ? { id: userId } : { role: "cast", isTrialGuest: false },
     include: { store: { select: { id: true, name: true } } },
     orderBy: { name: "asc" },
   });

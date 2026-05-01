@@ -12,7 +12,7 @@ export default async function CastsPage() {
   if (role === "cast") redirect("/mypage");
 
   const casts = await prisma.user.findMany({
-    where: { role: "cast" },
+    where: { role: "cast", isTrialGuest: false },
     include: { store: { select: { id: true, name: true } } },
     orderBy: [{ store: { name: "asc" } }, { name: "asc" }],
   });

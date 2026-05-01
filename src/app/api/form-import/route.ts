@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
     // メールアドレス → キャストIDのマッピング
     const allCasts = await prisma.user.findMany({
-      where: { role: "cast" },
+      where: { role: "cast", isTrialGuest: false },
       select: { id: true, email: true, name: true },
     });
     const emailMap = new Map(allCasts.map((c) => [c.email.toLowerCase(), c]));

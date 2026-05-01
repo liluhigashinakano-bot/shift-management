@@ -27,7 +27,7 @@ export async function GET() {
 
   const stores = await prisma.store.findMany({
     orderBy: { name: "asc" },
-    include: { _count: { select: { users: { where: { role: "cast" } } } } },
+    include: { _count: { select: { users: { where: { role: "cast", isTrialGuest: false } } } } },
   });
   return NextResponse.json(
     stores.map((s) => ({ id: s.id, name: s.name, castCount: s._count.users }))
