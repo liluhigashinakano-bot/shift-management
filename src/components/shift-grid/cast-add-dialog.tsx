@@ -148,9 +148,11 @@ export function CastAddDialog({
           </p>
         )}
         {/* タブ切り替え */}
-        <div className="flex flex-wrap gap-x-1 border-b border-gray-300">
+        <div className="flex flex-wrap gap-x-1 border-b border-gray-300" role="tablist">
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === "own"}
             className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "own"
                 ? "border-purple-500 text-purple-700"
@@ -166,6 +168,8 @@ export function CastAddDialog({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === "help"}
             className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "help"
                 ? "border-orange-500 text-orange-700"
@@ -181,6 +185,8 @@ export function CastAddDialog({
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={tab === "trial"}
             className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-sm font-medium border-b-2 transition-colors ${
               tab === "trial"
                 ? "border-purple-500 text-purple-700"
@@ -218,22 +224,30 @@ export function CastAddDialog({
           </div>
         )}
 
-        {tab === "trial" ? (
-          <div className="space-y-1">
-            <Label>キャスト名（必須）</Label>
-            <Input
+        {/* 体入は登録キャストの select と DOM を共有しない（ネイティブ text で確実に区別） */}
+        {tab === "trial" && (
+          <div key="trial-guest-fields" className="space-y-1">
+            <label htmlFor="shift-add-trial-guest-name" className="text-sm font-medium leading-none">
+              キャスト名（必須）
+            </label>
+            <input
+              id="shift-add-trial-guest-name"
+              name="trialGuestName"
+              type="text"
               value={trialGuestName}
               onChange={(e) => setTrialGuestName(e.target.value)}
               placeholder="例: あい（表では「体入あい」と表示）"
               maxLength={TRIAL_GUEST_NAME_MAX_LEN}
               autoComplete="off"
+              className="h-9 w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-sm outline-none focus-visible:border-purple-500 focus-visible:ring-2 focus-visible:ring-purple-200"
             />
             <p className="text-xs text-gray-500">
               登録キャストではなく自由入力です（最大{TRIAL_GUEST_NAME_MAX_LEN}文字）。シフト表では先頭に「体入」が付きます。
             </p>
           </div>
-        ) : (
-          <div className="space-y-1">
+        )}
+        {(tab === "own" || tab === "help") && (
+          <div key="registered-cast-fields" className="space-y-1">
             <Label>キャスト</Label>
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
