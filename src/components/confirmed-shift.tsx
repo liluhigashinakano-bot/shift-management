@@ -127,10 +127,14 @@ export function ConfirmedShift({
   // ヘルプスロットをマージ（他店の同一半日スロットと同じ刻の自店スロットだけ隠す。前後の自店帯は残す）
   const mergedDays = useMemo(() => {
     return data.shiftDays.map((day) => {
-      const helpSlots = helpSlotsByDay?.[day.id] || [];
+      const helpSlotsRaw = helpSlotsByDay?.[day.id] || [];
+      const localKeySet = new Set(day.shiftSlots.map((s) => `${s.castId}|${s.timeSlot}`));
+      const helpSlots = helpSlotsRaw.filter(
+        (h) => !localKeySet.has(`${h.castId}|${h.timeSlot}`),
+      );
       const helpSlotKeys = new Set(helpSlots.map((h) => `${h.castId}|${h.timeSlot}`));
       const localSlots =
-        helpSlots.length === 0
+        helpSlotsRaw.length === 0
           ? day.shiftSlots
           : day.shiftSlots.filter((s) => !helpSlotKeys.has(`${s.castId}|${s.timeSlot}`));
       const mergedSlots = [
@@ -440,7 +444,8 @@ export function ConfirmedShift({
       {showSendList && selectedCast && (
         <SendListModal
           castName={assignedCasts.find((c) => c.id === selectedCast)?.name || ""}
-          days={mergedDays}
+          plainDays={data.shiftDays}
+          helpSlotsByDay={helpSlotsByDay}
           castId={selectedCast}
           month={data.month}
           localStoreName={data.store.name}
@@ -451,37 +456,42 @@ export function ConfirmedShift({
   );
 }
 
-/** 同一日・同一キャストのスロットを、ヘルプ帯／自店帯の切れ目で分割する */
-function segmentSlotsByHelpStore(slots: ShiftSlot[]): ShiftSlot[][] {
+/** 半日刻みの timeSlot 列から連続した [start, end) の帯に分割 */
+function contiguousRangesFromTimeSlots(
+  slots: { timeSlot: number }[],
+): { start: number; end: number }[] {
   if (slots.length === 0) return [];
   const sorted = [...slots].sort((a, b) => a.timeSlot - b.timeSlot);
-  const key = (s: ShiftSlot) => s._helpStore ?? "";
-  const out: ShiftSlot[][] = [];
-  let cur: ShiftSlot[] = [sorted[0]];
+  const out: { start: number; end: number }[] = [];
+  let segStart = sorted[0].timeSlot;
+  let prev = sorted[0].timeSlot;
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    const s = sorted[i];
-    const contiguous = s.timeSlot - prev.timeSlot === 0.5 && key(s) === key(prev);
-    if (!contiguous) {
-      out.push(cur);
-      cur = [s];
-    } else {
-      cur.push(s);
+    const t = sorted[i].timeSlot;
+    if (t !== prev + 0.5) {
+      out.push({ start: segStart, end: prev + 0.5 });
+      segStart = t;
     }
+    prev = t;
   }
-  out.push(cur);
+  out.push({ start: segStart, end: prev + 0.5 });
   return out;
 }
 
-// 送付用一覧モーダル
+// 送付用一覧モーダル（merged を使わず、自店スロット＋ helpSlotsByDay で帯を分離して正確に出力）
 function SendListModal({
-  castName, days, castId, month, localStoreName, onClose,
+  castName,
+  plainDays,
+  helpSlotsByDay,
+  castId,
+  month,
+  localStoreName,
+  onClose,
 }: {
   castName: string;
-  days: ShiftDay[];
+  plainDays: ShiftDay[];
+  helpSlotsByDay?: Record<string, HelpSlot[]>;
   castId: string;
   month: number;
-  /** 自店名（同日にヘルプと自店の両方があるとき、自店帯の行末に付ける） */
   localStoreName: string;
   onClose: () => void;
 }) {
@@ -490,32 +500,55 @@ function SendListModal({
   // シフトテキスト生成
   const text = useMemo(() => {
     const lines: string[] = [`【確定シフト】`];
-    for (const day of days) {
-      const castSlots = day.shiftSlots
-        .filter((s) => s.castId === castId)
-        .sort((a, b) => a.timeSlot - b.timeSlot);
-      if (castSlots.length === 0) continue;
+    for (const day of plainDays) {
+      const helpAll = helpSlotsByDay?.[day.id] ?? [];
+      const helpForCastRaw = helpAll.filter((h) => h.castId === castId);
+      const localAll = day.shiftSlots.filter((s) => s.castId === castId);
+      const localKeySet = new Set(localAll.map((s) => `${s.castId}|${s.timeSlot}`));
+      // 他店が終業まで丸ごと入っている場合、自店の深夜帯と重複する。同じ半日は自店を優先してヘルプ側を切り詰める。
+      const helpForCast = helpForCastRaw.filter(
+        (h) => !localKeySet.has(`${h.castId}|${h.timeSlot}`),
+      );
+      const helpKeys = new Set(helpForCast.map((h) => `${h.castId}|${h.timeSlot}`));
 
+      const localForCast = localAll.filter((s) => !helpKeys.has(`${s.castId}|${s.timeSlot}`));
+
+      const helpRanges = contiguousRangesFromTimeSlots(helpForCast);
+      const localRanges = contiguousRangesFromTimeSlots(localForCast);
+
+      type Piece = { start: number; end: number; kind: "help" | "local"; helpStore: string };
+      const pieces: Piece[] = [];
+      for (const r of helpRanges) {
+        const h = helpForCast.find((x) => x.timeSlot === r.start);
+        pieces.push({
+          start: r.start,
+          end: r.end,
+          kind: "help",
+          helpStore: h?.storeName ?? "",
+        });
+      }
+      for (const r of localRanges) {
+        pieces.push({ start: r.start, end: r.end, kind: "local", helpStore: "" });
+      }
+      pieces.sort((a, b) => a.start - b.start);
+      if (pieces.length === 0) continue;
+
+      const hasHelp = pieces.some((p) => p.kind === "help");
       const d = new Date(day.date);
       const dateStr = `${month}月${d.getDate()}日(${getJapaneseDayOfWeek(d)})`;
-      const hasHelpOnDay = castSlots.some((s) => Boolean(s._helpStore));
-      const segments = segmentSlotsByHelpStore(castSlots);
 
-      for (const seg of segments) {
-        const startTime = seg[0].timeSlot;
-        const endTime = seg[seg.length - 1].timeSlot + 0.5;
-        const helpStore = seg[0]._helpStore;
+      for (const p of pieces) {
         let suffix = "";
-        if (helpStore) {
-          suffix = `　${helpStore}`;
-        } else if (hasHelpOnDay && localStoreName) {
+        if (p.kind === "help") {
+          if (p.helpStore) suffix = `　${p.helpStore}`;
+        } else if (hasHelp && localStoreName) {
           suffix = `　${localStoreName}`;
         }
-        lines.push(`${dateStr}　${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}${suffix}`);
+        lines.push(`${dateStr}　${formatTimeSlot(p.start)}～${formatTimeSlot(p.end)}${suffix}`);
       }
     }
     return lines.join("\n");
-  }, [days, castId, month, localStoreName]);
+  }, [plainDays, helpSlotsByDay, castId, month, localStoreName]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
