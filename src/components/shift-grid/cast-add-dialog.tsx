@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
-import { TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-user";
+import { TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-constants";
 
 type Props = {
   dayId: string;

@@ -3,11 +3,8 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 import { canAccessStore, type SessionUserLike } from "@/lib/store-access";
-import {
-  createTrialGuestUser,
-  parseTrialGuestName,
-  TRIAL_GUEST_NAME_MAX_LEN,
-} from "@/lib/trial-guest-user";
+import { createTrialGuestUser } from "@/lib/trial-guest-user";
+import { parseTrialGuestName, TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-constants";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
