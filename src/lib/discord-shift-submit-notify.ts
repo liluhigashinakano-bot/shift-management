@@ -27,7 +27,43 @@ function formatChangeContentLine(date: Date, startTime: number, endTime: number)
   return `${md} ${formatTimeSlot(startTime)}〜${formatTimeSlot(endTime)}`;
 }
 
-type NotifyKind =
+function formatShiftAddLine(date: Date, startTime: number, endTime: number): string {
+  return `${formatJapaneseCalendarDay(date)}${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}`;
+}
+
+/** FNV-1a 風: castId から一貫したインデックスを得る */
+function hashCastId(castId: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < castId.length; i++) {
+    h ^= castId.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
+/** Discord Embed 左の色帯用（ダークテーマで見やすい彩度ありパレット） */
+const EMBED_COLOR_PALETTE = [
+  0x5865f2, 0x57f287, 0xfee75c, 0xeb459e, 0xed4245, 0x9b59b6, 0x3498db, 0xe67e22,
+  0x1abc9c, 0xe91e63, 0x00bcd4, 0xff9800, 0x8bc34a, 0x673ab7, 0xf44336, 0x009688,
+  0x795548, 0x607d8b, 0x3f51b5, 0xff5722, 0x00acc1, 0x7cb342, 0xd81b60, 0x5c6bc0,
+] as const;
+
+function embedColorForCastId(castId: string): number {
+  return EMBED_COLOR_PALETTE[hashCastId(castId) % EMBED_COLOR_PALETTE.length]!;
+}
+
+/** 1 行目を title、残りを description（Discord 上限に合わせて切る） */
+function splitEmbedTitleBody(fullText: string): { title: string; description: string } {
+  const trimmed = fullText.trim();
+  const nl = trimmed.indexOf("\n");
+  if (nl === -1) {
+    return { title: clipContent(trimmed, 256), description: "\u200b" };
+  }
+  return {
+    title: clipContent(trimmed.slice(0, nl).trim(), 256),
+    description: clipContent(trimmed.slice(nl + 1).trim(), 4096),
+  };
+}
   | { kind: "create"; date: Date; startTime: number; endTime: number; notes?: string | null }
   | { kind: "update"; date: Date; startTime: number; endTime: number; notes?: string | null }
   | { kind: "delete"; date: Date; startTime: number; endTime: number }
@@ -163,12 +199,21 @@ export async function notifyCastShiftSubmitToDiscord(
       }
     }
 
-    content = clipContent(content, 1900);
+    content = clipContent(content, 5800);
 
+    const { title, description } = splitEmbedTitleBody(content);
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: title || "シフト通知",
+            description: description || "\u200b",
+            color: embedColorForCastId(castId),
+          },
+        ],
+      }),
     });
 
     if (!res.ok) {
