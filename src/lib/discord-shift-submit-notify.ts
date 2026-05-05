@@ -64,10 +64,6 @@ function splitEmbedTitleBody(fullText: string): { title: string; description: st
     description: clipContent(trimmed.slice(nl + 1).trim(), 4096),
   };
 }
-  | { kind: "create"; date: Date; startTime: number; endTime: number; notes?: string | null }
-  | { kind: "update"; date: Date; startTime: number; endTime: number; notes?: string | null }
-  | { kind: "delete"; date: Date; startTime: number; endTime: number }
-  | { kind: "bulk"; entries: { date: Date; startTime: number; endTime: number }[] };
 
 /** 店名比較用（全角/半角などを寄せてから trim） */
 function norm(s: string | null | undefined): string {
@@ -83,6 +79,20 @@ function discordNotifyDebug(msg: string, extra?: Record<string, unknown>) {
   console.log("[discord shift notify debug]", msg, extra ?? "");
 }
 
+/** 中継サービス経由だと embeds が無視されプレーン文になることがあるため、異常時の手掛かりに使う */
+function warnIfWebhookMayStripEmbeds(webhookUrl: string) {
+  try {
+    const host = new URL(webhookUrl).hostname.toLowerCase();
+    if (host.includes("discord.com") || host.includes("discordapp.com")) return;
+    console.warn(
+      "[discord shift notify] Webhook が Discord 公式ホストではありません。embed（左の色帯）が中継で落ちている可能性があります:",
+      host,
+    );
+  } catch {
+    console.warn("[discord shift notify] Webhook URL の解析に失敗しました");
+  }
+}
+
 /**
  * 所属店舗が対象（既定: 東中野）のキャストの希望が登録・更新されたとき、
  * DISCORD_SHIFT_SUBMIT_WEBHOOK_URL が設定されていれば Discord へ通知する。
@@ -92,13 +102,18 @@ function discordNotifyDebug(msg: string, extra?: Record<string, unknown>) {
 export async function notifyCastShiftSubmitToDiscord(
   castId: string,
   periodId: string,
-  detail: NotifyKind,
+  detail:
+    | { kind: "create"; date: Date; startTime: number; endTime: number; notes?: string | null }
+    | { kind: "update"; date: Date; startTime: number; endTime: number; notes?: string | null }
+    | { kind: "delete"; date: Date; startTime: number; endTime: number }
+    | { kind: "bulk"; entries: { date: Date; startTime: number; endTime: number }[] },
 ): Promise<void> {
   const webhookUrl = norm(process.env.DISCORD_SHIFT_SUBMIT_WEBHOOK_URL);
   if (!webhookUrl) {
     discordNotifyDebug("skip: DISCORD_SHIFT_SUBMIT_WEBHOOK_URL empty");
     return;
   }
+  warnIfWebhookMayStripEmbeds(webhookUrl);
 
   const targetStoreName =
     norm(process.env.DISCORD_SHIFT_SUBMIT_STORE_NAME) || DEFAULT_TARGET_STORE;
@@ -202,6 +217,7 @@ export async function notifyCastShiftSubmitToDiscord(
     content = clipContent(content, 5800);
 
     const { title, description } = splitEmbedTitleBody(content);
+    const color = embedColorForCastId(castId) & 0xffffff;
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -210,7 +226,11 @@ export async function notifyCastShiftSubmitToDiscord(
           {
             title: title || "シフト通知",
             description: description || "\u200b",
-            color: embedColorForCastId(castId),
+            color,
+            timestamp: new Date().toISOString(),
+            footer: {
+              text: clipContent(`${cast.name} · ${targetStoreName} · シフト希望`, 2048),
+            },
           },
         ],
       }),

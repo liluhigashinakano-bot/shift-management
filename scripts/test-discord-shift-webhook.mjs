@@ -43,14 +43,25 @@ if (!url) {
   process.exit(1);
 }
 
-const content =
-  "【テスト】シフト管理アプリからの接続確認です。\n" +
-  `時刻: ${new Date().toISOString()}`;
+const now = new Date().toISOString();
 
 const res = await fetch(url, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ content }),
+  body: JSON.stringify({
+    embeds: [
+      {
+        title: "【テスト】接続確認（embed）",
+        description:
+          "シフト管理アプリからの送信テストです。\n" +
+          "**左の青いバー**が見えれば、色付き通知も同じ形式で届きます。\n" +
+          `時刻: ${now}`,
+        color: 0x5865f2,
+        timestamp: now,
+        footer: { text: "node scripts/test-discord-shift-webhook.mjs" },
+      },
+    ],
+  }),
 });
 
 const body = await res.text().catch(() => "");

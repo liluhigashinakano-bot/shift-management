@@ -49,11 +49,21 @@ export async function POST(req: NextRequest) {
         error: "DISCORD_SHIFT_SUBMIT_WEBHOOK_URL がこのサーバーで空です。Railway の Variables が shift-management サービスに付いているか確認してください。",
       });
     }
-    const content = `【テスト】シフト管理アプリ（本番）Webhook 疎通 ${new Date().toISOString()}`;
+    const now = new Date().toISOString();
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "【テスト】Webhook 疎通",
+            description: `シフト管理アプリからの送信テストです。\n時刻: ${now}`,
+            color: 0x5865f2,
+            timestamp: now,
+            footer: { text: "Discord 左の色付きバーが見えれば embed 経路は正常です" },
+          },
+        ],
+      }),
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
