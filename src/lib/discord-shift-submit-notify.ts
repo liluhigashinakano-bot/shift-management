@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { formatDate, formatTimeSlot } from "@/lib/shift-utils";
+import { formatTimeSlot } from "@/lib/shift-utils";
 
 const DEFAULT_TARGET_STORE = "東中野";
 
@@ -14,10 +14,20 @@ function clipContent(s: string, max: number): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
+/** 通知用: 5月20日 */
+function formatJapaneseCalendarDay(date: Date): string {
+  const d = new Date(date);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+function formatShiftAddLine(date: Date, startTime: number, endTime: number): string {
+  return `${formatJapaneseCalendarDay(date)}${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}`;
+}
+
 type NotifyKind =
   | { kind: "create"; date: Date; startTime: number; endTime: number; notes?: string | null }
   | { kind: "update"; date: Date; startTime: number; endTime: number; notes?: string | null }
-  | { kind: "bulk"; datesCount: number };
+  | { kind: "bulk"; entries: { date: Date; startTime: number; endTime: number }[] };
 
 /** 店名比較用（全角/半角などを寄せてから trim） */
 function norm(s: string | null | undefined): string {
@@ -100,25 +110,45 @@ export async function notifyCastShiftSubmitToDiscord(
     }
 
     const periodLine = `${period.store.name} ${period.year}年${period.month}月${halfLabel(period.half)}`;
-    let title: string;
-    let body: string;
 
+    let content: string;
     if (detail.kind === "bulk") {
-      title = "【シフト提出（まとめ）】";
-      body = `**${cast.name}**（${targetStoreName}所属）が **${detail.datesCount}日分** の希望を登録しました。\n提出先: ${periodLine}`;
+      if (detail.entries.length === 0) return;
+      const sorted = [...detail.entries].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+      );
+      const n = sorted.length;
+      const addLines = sorted.map((e) => formatShiftAddLine(e.date, e.startTime, e.endTime)).join("、");
+      content = [
+        "【シフト提出】",
+        `キャスト名：${cast.name}（${targetStoreName}所属）が ${n}日分 の希望を登録しました。`,
+        `提出先: ${periodLine}`,
+        `追加内容：${addLines}`,
+      ].join("\n");
     } else {
-      const range = `${formatTimeSlot(detail.startTime)}〜${formatTimeSlot(detail.endTime)}`;
-      const day = formatDate(detail.date);
       const notes = detail.notes?.trim();
-      const notesLine = notes ? `\n備考: ${clipContent(notes, 300)}` : "";
-      title =
-        detail.kind === "create"
-          ? "【シフト提出】"
-          : "【シフト希望変更】";
-      body = `**${cast.name}**（${targetStoreName}所属）が希望を${detail.kind === "create" ? "登録" : "更新"}しました。\n提出先: ${periodLine}\n**${day}** ${range}${notesLine}`;
+      const notesLine = notes ? `\n備考：${clipContent(notes, 300)}` : "";
+      const addLine = formatShiftAddLine(detail.date, detail.startTime, detail.endTime);
+      if (detail.kind === "create") {
+        content = [
+          "【シフト提出】",
+          `キャスト名：${cast.name}（${targetStoreName}所属）が 1日分 の希望を登録しました。`,
+          `提出先: ${periodLine}`,
+          `追加内容：${addLine}`,
+        ].join("\n");
+        content += notesLine;
+      } else {
+        content = [
+          "【シフト希望変更】",
+          `キャスト名：${cast.name}（${targetStoreName}所属）が希望を更新しました。`,
+          `提出先: ${periodLine}`,
+          `変更内容：${addLine}`,
+        ].join("\n");
+        content += notesLine;
+      }
     }
 
-    const content = clipContent(`${title}\n${body}`, 1900);
+    content = clipContent(content, 1900);
 
     const res = await fetch(webhookUrl, {
       method: "POST",

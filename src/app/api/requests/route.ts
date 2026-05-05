@@ -187,9 +187,16 @@ export async function POST(req: NextRequest) {
       await applyToShiftTable(castId, periodId, new Date(entry.date), entry.startTime, entry.endTime, entry.notes);
     }
 
+    const sortedForNotify = [...merged].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
     await notifyCastShiftSubmitToDiscord(castId, periodId, {
       kind: "bulk",
-      datesCount: merged.length,
+      entries: sortedForNotify.map((e) => ({
+        date: new Date(e.date),
+        startTime: e.startTime,
+        endTime: e.endTime,
+      })),
     });
 
     return NextResponse.json({ ok: true, count: data.length });
