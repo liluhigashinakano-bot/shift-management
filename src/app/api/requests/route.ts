@@ -281,7 +281,13 @@ export async function POST(req: NextRequest) {
     const { id } = body;
     const existing = await prisma.shiftRequest.findUnique({
       where: { id },
-      select: { castId: true, periodId: true, date: true },
+      select: {
+        castId: true,
+        periodId: true,
+        date: true,
+        startTime: true,
+        endTime: true,
+      },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (role === "cast" && existing.castId !== session.user.id) {
@@ -290,6 +296,12 @@ export async function POST(req: NextRequest) {
     const lockedDel = await assertRequestMutationAllowed(role, existing.periodId);
     if (lockedDel) return lockedDel;
     await removeCastSlotsForDay(existing.castId, existing.periodId, existing.date);
+    await notifyCastShiftSubmitToDiscord(existing.castId, existing.periodId, {
+      kind: "delete",
+      date: existing.date,
+      startTime: existing.startTime,
+      endTime: existing.endTime,
+    });
     await prisma.shiftRequest.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   }

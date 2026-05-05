@@ -20,13 +20,17 @@ function formatJapaneseCalendarDay(date: Date): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-function formatShiftAddLine(date: Date, startTime: number, endTime: number): string {
-  return `${formatJapaneseCalendarDay(date)}${formatTimeSlot(startTime)}～${formatTimeSlot(endTime)}`;
+/** 変更・削除通知用: 5/20 20:00〜25:30 */
+function formatChangeContentLine(date: Date, startTime: number, endTime: number): string {
+  const d = new Date(date);
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${md} ${formatTimeSlot(startTime)}〜${formatTimeSlot(endTime)}`;
 }
 
 type NotifyKind =
   | { kind: "create"; date: Date; startTime: number; endTime: number; notes?: string | null }
   | { kind: "update"; date: Date; startTime: number; endTime: number; notes?: string | null }
+  | { kind: "delete"; date: Date; startTime: number; endTime: number }
   | { kind: "bulk"; entries: { date: Date; startTime: number; endTime: number }[] };
 
 /** 店名比較用（全角/半角などを寄せてから trim） */
@@ -126,10 +130,10 @@ export async function notifyCastShiftSubmitToDiscord(
         `追加内容：${addLines}`,
       ].join("\n");
     } else {
-      const notes = detail.notes?.trim();
-      const notesLine = notes ? `\n備考：${clipContent(notes, 300)}` : "";
-      const addLine = formatShiftAddLine(detail.date, detail.startTime, detail.endTime);
       if (detail.kind === "create") {
+        const notes = detail.notes?.trim();
+        const notesLine = notes ? `\n備考：${clipContent(notes, 300)}` : "";
+        const addLine = formatShiftAddLine(detail.date, detail.startTime, detail.endTime);
         content = [
           "【シフト提出】",
           `キャスト名：${cast.name}（${targetStoreName}所属）が 1日分 の希望を登録しました。`,
@@ -137,12 +141,23 @@ export async function notifyCastShiftSubmitToDiscord(
           `追加内容：${addLine}`,
         ].join("\n");
         content += notesLine;
+      } else if (detail.kind === "delete") {
+        const changeLine = formatChangeContentLine(detail.date, detail.startTime, detail.endTime);
+        content = [
+          "【シフト希望変更】",
+          `キャスト名：${cast.name}（${targetStoreName}所属）が希望を削除しました。`,
+          `提出先: ${periodLine}`,
+          `変更内容：${changeLine}`,
+        ].join("\n");
       } else {
+        const notes = detail.notes?.trim();
+        const notesLine = notes ? `\n備考：${clipContent(notes, 300)}` : "";
+        const changeLine = formatChangeContentLine(detail.date, detail.startTime, detail.endTime);
         content = [
           "【シフト希望変更】",
           `キャスト名：${cast.name}（${targetStoreName}所属）が希望を更新しました。`,
           `提出先: ${periodLine}`,
-          `変更内容：${addLine}`,
+          `変更内容：${changeLine}`,
         ].join("\n");
         content += notesLine;
       }
