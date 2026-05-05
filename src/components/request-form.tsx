@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,16 @@ function findDayDateKeyForRequest(rDate: string, dayList: Day[]): string | null 
     if (sameCalendarDay(d.date, rDate)) return d.date;
   }
   return null;
+}
+
+async function errorMessageFromResponse(res: Response): Promise<string> {
+  try {
+    const data = (await res.json()) as { error?: unknown };
+    if (typeof data.error === "string" && data.error) return data.error;
+  } catch {
+    // not JSON
+  }
+  return `保存に失敗しました (${res.status})`;
 }
 
 export function RequestForm({
@@ -128,21 +139,28 @@ export function RequestForm({
       if (picked.length !== 1) return;
       const [dateKey, v] = picked[0];
       setSaving(true);
-      await fetch("/api/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          id: editingRequest.id,
-          date: dateKey,
-          startTime: parseFloat(v.start),
-          endTime: parseFloat(v.end),
-          notes: v.notes || null,
-        }),
-      });
-      setSaving(false);
-      closeModal();
-      reload();
+      try {
+        const res = await fetch("/api/requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update",
+            id: editingRequest.id,
+            date: dateKey,
+            startTime: parseFloat(v.start),
+            endTime: parseFloat(v.end),
+            notes: v.notes || null,
+          }),
+        });
+        if (!res.ok) {
+          toast.error(await errorMessageFromResponse(res));
+          return;
+        }
+        closeModal();
+        reload();
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -160,39 +178,48 @@ export function RequestForm({
 
     if (selected.length === 0) return;
     setSaving(true);
-
-    await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "bulkCreate",
-        castId,
-        periodId,
-        entries: selected,
-      }),
-    });
-
-    setSaving(false);
-    closeModal();
-    setEntries((prev) => {
-      const n = { ...prev };
-      Object.keys(n).forEach((k) => {
-        n[k] = { ...n[k], checked: false };
+    try {
+      const res = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulkCreate",
+          castId,
+          periodId,
+          entries: selected,
+        }),
       });
-      return n;
-    });
-    reload();
+      if (!res.ok) {
+        toast.error(await errorMessageFromResponse(res));
+        return;
+      }
+      closeModal();
+      setEntries((prev) => {
+        const n = { ...prev };
+        Object.keys(n).forEach((k) => {
+          n[k] = { ...n[k], checked: false };
+        });
+        return n;
+      });
+      reload();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteRequest = async (id: string) => {
     const row = requests.find((x) => x.id === id);
     if (row && lockedFor(row.periodId)) return;
     if (!confirm("この希望を削除しますか？")) return;
-    await fetch("/api/requests", {
+    const res = await fetch("/api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", id }),
     });
+    if (!res.ok) {
+      toast.error(await errorMessageFromResponse(res));
+      return;
+    }
     closeModal();
     reload();
   };
