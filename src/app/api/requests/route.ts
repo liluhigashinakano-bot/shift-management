@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
 import { assertShiftSlotsUnlocked, assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
+import { notifyCastShiftSubmitToDiscord } from "@/lib/discord-shift-submit-notify";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
@@ -130,6 +131,13 @@ export async function POST(req: NextRequest) {
       },
     });
     await applyToShiftTable(castId, periodId, new Date(date), startTime, endTime, notes);
+    await notifyCastShiftSubmitToDiscord(castId, periodId, {
+      kind: "create",
+      date: new Date(date),
+      startTime,
+      endTime,
+      notes,
+    });
     return NextResponse.json(request);
   }
 
@@ -178,6 +186,11 @@ export async function POST(req: NextRequest) {
     for (const entry of merged) {
       await applyToShiftTable(castId, periodId, new Date(entry.date), entry.startTime, entry.endTime, entry.notes);
     }
+
+    await notifyCastShiftSubmitToDiscord(castId, periodId, {
+      kind: "bulk",
+      datesCount: merged.length,
+    });
 
     return NextResponse.json({ ok: true, count: data.length });
   }
@@ -229,6 +242,13 @@ export async function POST(req: NextRequest) {
       endTime,
       notes ?? null,
     );
+    await notifyCastShiftSubmitToDiscord(existing.castId, existing.periodId, {
+      kind: "update",
+      date: newDate,
+      startTime,
+      endTime,
+      notes,
+    });
     return NextResponse.json({ ok: true });
   }
 
