@@ -37,8 +37,9 @@ export async function GET() {
       email: true,
       staffLoginId: true,
       accessAllStores: true,
+      editAllStores: true,
       storeId: true,
-      assignedStores: { select: { storeId: true } },
+      assignedStores: { select: { storeId: true, canEdit: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -51,8 +52,12 @@ export async function GET() {
       loginId: displayLoginId(u.staffLoginId, u.email),
       email: u.email,
       accessAllStores: u.accessAllStores,
+      editAllStores: u.editAllStores,
       storeId: u.storeId,
       assignedStoreIds: u.assignedStores.map((a) => a.storeId),
+      editableStoreIds: u.assignedStores
+        .filter((a) => a.canEdit)
+        .map((a) => a.storeId),
     })),
     {
       headers: {
@@ -79,9 +84,14 @@ export async function POST(req: NextRequest) {
   const roleIn = String(body.role ?? "").trim();
   const loginId = String(body.loginId ?? "").trim().toLowerCase();
   const accessAllStores = Boolean(body.accessAllStores);
-  const storeIdsRaw = body.storeIds;
-  const storeIds = Array.isArray(storeIdsRaw)
-    ? storeIdsRaw.map((x) => String(x).trim()).filter(Boolean)
+  const editAllStores = Boolean(body.editAllStores);
+  const viewStoreIdsRaw = body.viewStoreIds ?? body.storeIds;
+  const editStoreIdsRaw = body.editStoreIds ?? body.storeIds;
+  const viewStoreIds = Array.isArray(viewStoreIdsRaw)
+    ? viewStoreIdsRaw.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  const editStoreIds = Array.isArray(editStoreIdsRaw)
+    ? editStoreIdsRaw.map((x) => String(x).trim()).filter(Boolean)
     : [];
 
   if (!name || !loginId) {
@@ -110,17 +120,28 @@ export async function POST(req: NextRequest) {
 
   const allStores = await prisma.store.findMany({ select: { id: true } });
   const valid = new Set(allStores.map((s) => s.id));
-  for (const sid of storeIds) {
+  const requestedStoreIds = [...new Set([...viewStoreIds, ...editStoreIds])];
+  for (const sid of requestedStoreIds) {
     if (!valid.has(sid)) {
       return NextResponse.json({ error: "無効な店舗IDが含まれています" }, { status: 400 });
     }
   }
 
   const isAdminRole = roleIn === "admin";
-  const effectiveAll = isAdminRole ? true : accessAllStores;
-  if (!effectiveAll && storeIds.length === 0) {
+  const effectiveEditAll = isAdminRole ? true : roleIn === "employee" && editAllStores;
+  const effectiveAll = isAdminRole ? true : accessAllStores || effectiveEditAll;
+  const assignedStoreIds = effectiveAll
+    ? [...new Set(editStoreIds)]
+    : requestedStoreIds;
+  if (!effectiveAll && assignedStoreIds.length === 0) {
     return NextResponse.json(
       { error: "所属店舗を1つ以上選ぶか、「全店舗」を指定してください" },
+      { status: 400 },
+    );
+  }
+  if (roleIn === "viewer" && (effectiveEditAll || editStoreIds.length > 0)) {
+    return NextResponse.json(
+      { error: "閲覧者には編集権限を付与できません" },
       { status: 400 },
     );
   }
@@ -129,7 +150,7 @@ export async function POST(req: NextRequest) {
   const passwordHash = hashSync(password, 10);
 
   const primaryStoreId =
-    effectiveAll || storeIds.length === 0 ? null : storeIds[0] ?? null;
+    effectiveAll || assignedStoreIds.length === 0 ? null : assignedStoreIds[0] ?? null;
 
   const user = await prisma.user.create({
     data: {
@@ -139,10 +160,16 @@ export async function POST(req: NextRequest) {
       passwordHash,
       role: roleIn,
       accessAllStores: effectiveAll,
+      editAllStores: effectiveEditAll,
       storeId: primaryStoreId,
       assignedStores:
-        !effectiveAll && storeIds.length > 0
-          ? { create: storeIds.map((storeId) => ({ storeId })) }
+        assignedStoreIds.length > 0
+          ? {
+              create: assignedStoreIds.map((storeId) => ({
+                storeId,
+                canEdit: effectiveEditAll ? true : editStoreIds.includes(storeId),
+              })),
+            }
           : undefined,
     },
   });
@@ -155,6 +182,7 @@ export async function POST(req: NextRequest) {
       loginId,
       role: user.role,
       accessAllStores: user.accessAllStores,
+      editAllStores: user.editAllStores,
     },
     password,
   });

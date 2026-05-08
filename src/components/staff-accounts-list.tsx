@@ -18,8 +18,10 @@ type StaffRow = {
   loginId: string | null;
   email: string;
   accessAllStores: boolean;
+  editAllStores: boolean;
   storeId: string | null;
   assignedStoreIds: string[];
+  editableStoreIds: string[];
 };
 
 type RoleChoice = "admin" | "employee" | "viewer";
@@ -32,7 +34,8 @@ function roleLabel(r: string): string {
 }
 
 function storesSummary(u: StaffRow, storeMap: Map<string, string>): string {
-  if (u.accessAllStores) return "全店舗";
+  if (u.accessAllStores && u.editAllStores) return "全店舗（編集）";
+  if (u.accessAllStores) return "全店舗（閲覧）";
   const ids =
     u.assignedStoreIds.length > 0
       ? u.assignedStoreIds
@@ -60,7 +63,8 @@ export function StaffAccountsList({
   const [name, setName] = useState("");
   const [role, setRole] = useState<RoleChoice>("employee");
   const [loginId, setLoginId] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [viewSelected, setViewSelected] = useState<Set<string>>(new Set());
+  const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [pwModal, setPwModal] = useState<{ password: string } | null>(null);
 
@@ -102,14 +106,15 @@ export function StaffAccountsList({
     const lid = u.loginId ?? "";
     setLoginId(lid);
     if (u.accessAllStores) {
-      setSelected(new Set([ALL]));
+      setViewSelected(new Set([ALL]));
     } else if (u.assignedStoreIds.length > 0) {
-      setSelected(new Set(u.assignedStoreIds));
+      setViewSelected(new Set(u.assignedStoreIds));
     } else if (u.storeId) {
-      setSelected(new Set([u.storeId]));
+      setViewSelected(new Set([u.storeId]));
     } else {
-      setSelected(new Set());
+      setViewSelected(new Set());
     }
+    setEditSelected(u.editAllStores ? new Set([ALL]) : new Set(u.editableStoreIds));
   };
 
   const closeEdit = () => {
@@ -117,18 +122,57 @@ export function StaffAccountsList({
     setSaving(false);
   };
 
-  const allSelected = useMemo(() => selected.has(ALL), [selected]);
+  const viewAllSelected = useMemo(() => viewSelected.has(ALL), [viewSelected]);
+  const editAllSelected = useMemo(() => editSelected.has(ALL), [editSelected]);
 
-  const setAllStores = (on: boolean) => {
-    if (on) setSelected(new Set([ALL]));
-    else setSelected(new Set());
+  const setViewAllStores = (on: boolean) => {
+    if (on) setViewSelected(new Set([ALL]));
+    else {
+      setViewSelected(new Set());
+      setEditSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(ALL);
+        return next;
+      });
+    }
   };
 
-  const toggleStore = (id: string) => {
-    setSelected((prev) => {
+  const setEditAllStores = (on: boolean) => {
+    if (role === "viewer") return;
+    if (on) {
+      setEditSelected(new Set([ALL]));
+      setViewSelected(new Set([ALL]));
+    } else {
+      setEditSelected(new Set());
+    }
+  };
+
+  const toggleViewStore = (id: string) => {
+    setViewSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+    setEditSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleEditStore = (id: string) => {
+    if (role === "viewer") return;
+    setEditSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setViewSelected((prev) => {
+      const next = new Set(prev);
+      next.add(id);
       return next;
     });
   };
@@ -140,16 +184,25 @@ export function StaffAccountsList({
     if (!trimmedName || !idNorm) return;
 
     if (role !== "admin") {
-      if (!allSelected && selected.size === 0) {
-        alert("所属店舗を1つ以上選ぶか、「全店舗」を選択してください。");
+      if (
+        !viewAllSelected &&
+        !editAllSelected &&
+        viewSelected.size === 0 &&
+        editSelected.size === 0
+      ) {
+        alert("閲覧または編集できる店舗を1つ以上選んでください。");
         return;
       }
     }
 
-    const storeIds = allSelected
+    const viewStoreIds = viewAllSelected
       ? []
-      : Array.from(selected).filter((x) => x !== ALL);
-    const accessAllStores = role === "admin" ? true : allSelected;
+      : Array.from(viewSelected).filter((x) => x !== ALL);
+    const editStoreIds = editAllSelected
+      ? []
+      : Array.from(editSelected).filter((x) => x !== ALL);
+    const accessAllStores = role === "admin" ? true : viewAllSelected || editAllSelected;
+    const editAllStores = role === "admin" ? true : role === "employee" && editAllSelected;
 
     setSaving(true);
     try {
@@ -162,7 +215,9 @@ export function StaffAccountsList({
           role,
           loginId: idNorm,
           accessAllStores,
-          storeIds,
+          editAllStores,
+          viewStoreIds,
+          editStoreIds,
         }),
       });
       const raw = await res.text();
@@ -321,7 +376,10 @@ export function StaffAccountsList({
                   type="radio"
                   name="edit-role"
                   checked={role === "viewer"}
-                  onChange={() => setRole("viewer")}
+                  onChange={() => {
+                    setRole("viewer");
+                    setEditSelected(new Set());
+                  }}
                 />
                 <span className="font-medium">閲覧者</span>
               </label>
@@ -330,28 +388,58 @@ export function StaffAccountsList({
             {role !== "admin" && (
               <div className="space-y-2">
                 <Label>所属店舗</Label>
-                <label className="flex items-center gap-2 text-sm border rounded-md px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={(e) => setAllStores(e.target.checked)}
-                  />
-                  全店舗
-                </label>
-                {!allSelected && (
-                  <div className="grid gap-2 sm:grid-cols-2 border rounded-md p-3 max-h-48 overflow-y-auto">
-                    {stores.map((s) => (
-                      <label key={s.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(s.id)}
-                          onChange={() => toggleStore(s.id)}
-                        />
-                        {s.name}
-                      </label>
-                    ))}
+                <div className="space-y-2 rounded-md border p-3">
+                  <div className="grid grid-cols-[1fr_64px_64px] items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <span>店舗</span>
+                    <span className="text-center">編集</span>
+                    <span className="text-center">閲覧</span>
                   </div>
-                )}
+                  <div className="grid grid-cols-[1fr_64px_64px] items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium">
+                    <span>全店舗</span>
+                    <input
+                      type="checkbox"
+                      className="mx-auto"
+                      checked={editAllSelected}
+                      disabled={role === "viewer"}
+                      onChange={(e) => setEditAllStores(e.target.checked)}
+                    />
+                    <input
+                      type="checkbox"
+                      className="mx-auto"
+                      checked={viewAllSelected}
+                      onChange={(e) => setViewAllStores(e.target.checked)}
+                    />
+                  </div>
+                  {!editAllSelected && (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {stores.map((s) => (
+                        <div
+                          key={s.id}
+                          className="grid grid-cols-[1fr_64px_64px] items-center gap-2 rounded-md bg-white px-3 py-2 text-sm"
+                        >
+                          <span>{s.name}</span>
+                          <input
+                            type="checkbox"
+                            className="mx-auto"
+                            checked={editSelected.has(s.id)}
+                            disabled={role === "viewer"}
+                            onChange={() => toggleEditStore(s.id)}
+                          />
+                          <input
+                            type="checkbox"
+                            className="mx-auto"
+                            checked={viewAllSelected || viewSelected.has(s.id)}
+                            disabled={viewAllSelected}
+                            onChange={() => toggleViewStore(s.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  編集にチェックした店舗は閲覧も可能です。閲覧だけの店舗ではシフト表などを変更できません。
+                </p>
               </div>
             )}
 
@@ -404,7 +492,11 @@ export function StaffAccountsList({
                   saving ||
                   !name.trim() ||
                   !loginId.trim() ||
-                  (role !== "admin" && !allSelected && selected.size === 0)
+                  (role !== "admin" &&
+                    !viewAllSelected &&
+                    !editAllSelected &&
+                    viewSelected.size === 0 &&
+                    editSelected.size === 0)
                 }
                 onClick={() => void saveEdit()}
               >

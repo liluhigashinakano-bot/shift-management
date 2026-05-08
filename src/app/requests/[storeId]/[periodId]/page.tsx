@@ -10,7 +10,7 @@ import { getGoogleFormPublicUrl } from "@/lib/google-form-config";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { CastGoogleFormBanner } from "@/components/cast-google-form-banner";
 import { FormImportButton } from "@/components/form-import-button";
-import { assertStorePageAccess } from "@/lib/store-access";
+import { assertStorePageAccess, canEditStore } from "@/lib/store-access";
 
 export default async function RequestsPage({
   params,
@@ -153,7 +153,8 @@ export default async function RequestsPage({
   });
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
-  const userRole = role || "";
+  const canEditCurrentStore = role === "cast" ? true : canEditStore(session.user as any, storeId);
+  const userRole = canEditCurrentStore ? role || "" : "viewer";
   const googleFormUrl = getGoogleFormPublicUrl();
   const validDatesYmd = period.shiftDays.map((d) =>
     new Date(d.date).toISOString().slice(0, 10),
@@ -192,7 +193,7 @@ export default async function RequestsPage({
               >
                 シフト表を見る &rarr;
               </Link>
-              {(role === "admin" || role === "employee") && (
+              {canEditCurrentStore && (
               <FormImportButton
                 periodId={periodId}
                 sheetsConfigured={sheetsOk}

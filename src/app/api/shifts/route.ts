@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
-import { canAccessStore, type SessionUserLike } from "@/lib/store-access";
+import { canAccessStore, canEditStore, type SessionUserLike } from "@/lib/store-access";
 import { createTrialGuestUser } from "@/lib/trial-guest-user";
 import { parseTrialGuestName, TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-constants";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
+}
+
+function assertCanEditStore(session: any, storeId: string) {
+  if (!canEditStore(session.user as SessionUserLike, storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
 }
 
 // GET: シフト期間のデータを取得
@@ -40,6 +47,9 @@ export async function GET(req: NextRequest) {
 
   if (!period) {
     return NextResponse.json({ error: "Period not found" }, { status: 404 });
+  }
+  if (!canAccessStore(session.user as SessionUserLike, period.storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // シフト希望情報をdayIdにマッピングして返す。
@@ -187,6 +197,8 @@ export async function POST(req: NextRequest) {
     if (!day) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
+    const editRes = assertCanEditStore(session, day.period.storeId);
+    if (editRes) return editRes;
     const lockRes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockRes) return lockRes;
 
@@ -385,7 +397,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 自店シフト表からのヘルプ登録が主用途のため、追加先店舗ではなく「操作している日の店舗」で権限を判定する
-    if (!canAccessStore(session.user as SessionUserLike, sourceDay.period.storeId)) {
+    if (!canEditStore(session.user as SessionUserLike, sourceDay.period.storeId)) {
       return NextResponse.json(
         { error: "Forbidden: source store" },
         { status: 403 },
@@ -625,11 +637,13 @@ export async function POST(req: NextRequest) {
 
     const dayForSlotLock = await prisma.shiftDay.findUnique({
       where: { id: dayId },
-      select: { periodId: true, date: true },
+      select: { periodId: true, date: true, period: { select: { storeId: true } } },
     });
     if (!dayForSlotLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
+    const editRes = assertCanEditStore(session, dayForSlotLock.period.storeId);
+    if (editRes) return editRes;
     const slotLockRm = await assertStaffShiftPeriodNotFinalized(dayForSlotLock.periodId);
     if (slotLockRm) return slotLockRm;
 
@@ -677,11 +691,13 @@ export async function POST(req: NextRequest) {
 
     const dayForEditLock = await prisma.shiftDay.findUnique({
       where: { id: dayId },
-      select: { periodId: true },
+      select: { periodId: true, period: { select: { storeId: true } } },
     });
     if (!dayForEditLock) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
+    const editRes = assertCanEditStore(session, dayForEditLock.period.storeId);
+    if (editRes) return editRes;
     const slotLockEd = await assertStaffShiftPeriodNotFinalized(dayForEditLock.periodId);
     if (slotLockEd) return slotLockEd;
 
@@ -752,6 +768,13 @@ export async function POST(req: NextRequest) {
     const { timeSlot, memo } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const periodForEdit = await prisma.shiftPeriod.findUnique({
+      where: { id: day.periodId },
+      select: { storeId: true },
+    });
+    if (!periodForEdit) return NextResponse.json({ error: "Period not found" }, { status: 404 });
+    const editRes = assertCanEditStore(session, periodForEdit.storeId);
+    if (editRes) return editRes;
     const slotMemoLock = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (slotMemoLock) return slotMemoLock;
 
@@ -776,6 +799,13 @@ export async function POST(req: NextRequest) {
     const { text } = body;
     const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
     if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const periodForEdit = await prisma.shiftPeriod.findUnique({
+      where: { id: day.periodId },
+      select: { storeId: true },
+    });
+    if (!periodForEdit) return NextResponse.json({ error: "Period not found" }, { status: 404 });
+    const editRes = assertCanEditStore(session, periodForEdit.storeId);
+    if (editRes) return editRes;
     const lockNotes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockNotes) return lockNotes;
 
@@ -795,11 +825,13 @@ export async function POST(req: NextRequest) {
     const { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty } = body;
     const dayForUpdate = await prisma.shiftDay.findUnique({
       where: { id: dayId },
-      select: { periodId: true },
+      select: { periodId: true, period: { select: { storeId: true } } },
     });
     if (!dayForUpdate) {
       return NextResponse.json({ error: "Day not found" }, { status: 404 });
     }
+    const editRes = assertCanEditStore(session, dayForUpdate.period.storeId);
+    if (editRes) return editRes;
     const lockDay = await assertStaffShiftPeriodNotFinalized(dayForUpdate.periodId);
     if (lockDay) return lockDay;
     await prisma.shiftDay.update({
@@ -851,11 +883,13 @@ export async function POST(req: NextRequest) {
 
     const period = await prisma.shiftPeriod.findUnique({
       where: { id: periodId },
-      select: { id: true },
+      select: { id: true, storeId: true },
     });
     if (!period) {
       return NextResponse.json({ error: "Period not found" }, { status: 404 });
     }
+    const editRes = assertCanEditStore(session, period.storeId);
+    if (editRes) return editRes;
     const lockRestore = await assertStaffShiftPeriodNotFinalized(periodId);
     if (lockRestore) return lockRestore;
 

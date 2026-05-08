@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canAccessStore } from "@/lib/store-access";
+import { canEditStore } from "@/lib/store-access";
 
 /** 調整一覧の「確定」列の表示を切り替え（管理者・社員のみ） */
 export async function POST(
@@ -31,7 +31,7 @@ export async function POST(
   });
   if (!period) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (role === "employee" && !canAccessStore(user as any, period.storeId)) {
+  if (role === "employee" && !canEditStore(user as any, period.storeId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

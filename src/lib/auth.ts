@@ -19,7 +19,8 @@ async function refreshJwtUserFieldsFromDb(token: JWT) {
         role: true,
         storeId: true,
         accessAllStores: true,
-        assignedStores: { select: { storeId: true } },
+        editAllStores: true,
+        assignedStores: { select: { storeId: true, canEdit: true } },
         store: { select: { name: true } },
       },
     });
@@ -31,7 +32,11 @@ async function refreshJwtUserFieldsFromDb(token: JWT) {
     token.storeId = dbUser.storeId;
     token.storeName = dbUser.store?.name ?? null;
     token.accessAllStores = dbUser.accessAllStores;
+    token.editAllStores = dbUser.editAllStores;
     token.assignedStoreIds = dbUser.assignedStores.map((a) => a.storeId);
+    token.editableStoreIds = dbUser.assignedStores
+      .filter((a) => a.canEdit)
+      .map((a) => a.storeId);
   } catch (e) {
     console.error("[auth][refreshJwtUserFieldsFromDb]", e);
   }
@@ -86,7 +91,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 where: { id: userId },
                 include: {
                   store: true,
-                  assignedStores: { select: { storeId: true } },
+                  assignedStores: { select: { storeId: true, canEdit: true } },
                 },
               })
             : null;
@@ -112,7 +117,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             storeId: user.storeId,
             storeName: user.store?.name ?? null,
             accessAllStores: user.accessAllStores,
+            editAllStores: user.editAllStores,
             assignedStoreIds: user.assignedStores.map((a) => a.storeId),
+            editableStoreIds: user.assignedStores
+              .filter((a) => a.canEdit)
+              .map((a) => a.storeId),
           };
         } catch (e) {
           console.error("[auth][authorize]", e);
@@ -131,7 +140,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.storeId = (user as any).storeId;
         token.storeName = (user as any).storeName;
         token.accessAllStores = (user as any).accessAllStores;
+        token.editAllStores = (user as any).editAllStores;
         token.assignedStoreIds = (user as any).assignedStoreIds;
+        token.editableStoreIds = (user as any).editableStoreIds;
         return token;
       }
       await refreshJwtUserFieldsFromDb(token);
@@ -146,8 +157,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (session.user as any).storeId = token.storeId ?? null;
         (session.user as any).storeName = token.storeName ?? null;
         (session.user as any).accessAllStores = token.accessAllStores;
+        (session.user as any).editAllStores = token.editAllStores;
         (session.user as any).assignedStoreIds = Array.isArray(token.assignedStoreIds)
           ? token.assignedStoreIds
+          : [];
+        (session.user as any).editableStoreIds = Array.isArray(token.editableStoreIds)
+          ? token.editableStoreIds
           : [];
       }
       return session;

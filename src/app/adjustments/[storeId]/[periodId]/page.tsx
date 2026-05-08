@@ -8,7 +8,7 @@ import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
 import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirmed-publish-panel";
 import Link from "next/link";
 import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
-import { assertStorePageAccess } from "@/lib/store-access";
+import { assertStorePageAccess, canEditStore } from "@/lib/store-access";
 
 export default async function AdjustmentsPage({
   params,
@@ -215,7 +215,7 @@ export default async function AdjustmentsPage({
   const adjustedCasts = allCasts.filter((c) => adjustedCastIds.has(c.id));
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
-  const isStaffEditor = role === "admin" || role === "employee";
+  const isStaffEditor = role !== "cast" && canEditStore(session.user as any, storeId);
 
   return (
     <div className="min-h-dvh">

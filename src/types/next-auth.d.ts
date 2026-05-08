@@ -10,7 +10,9 @@ declare module "next-auth" {
       storeId: string | null;
       storeName: string | null;
       accessAllStores?: boolean;
+      editAllStores?: boolean;
       assignedStoreIds?: string[];
+      editableStoreIds?: string[];
     };
   }
 }
@@ -23,6 +25,8 @@ declare module "next-auth/jwt" {
     storeId?: string | null;
     storeName?: string | null;
     accessAllStores?: boolean;
+    editAllStores?: boolean;
     assignedStoreIds?: string[];
+    editableStoreIds?: string[];
   }
 }

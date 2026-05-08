@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { canAccessStore } from "@/lib/store-access";
+import { canEditStore } from "@/lib/store-access";
 
 /** シフト希望の締切フラグを切り替え（管理者・社員のみ） */
 export async function POST(
@@ -33,7 +33,7 @@ export async function POST(
 
   if (
     role === "employee" &&
-    !canAccessStore(user as any, period.storeId)
+    !canEditStore(user as any, period.storeId)
   ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

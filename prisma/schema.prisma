@@ -33,6 +33,8 @@ model User {
   store        Store?   @relation(fields: [storeId], references: [id])
   /// true のとき店舗制限なし（管理者に付与可。従業員/閲覧者の「全店舗」選択時）
   accessAllStores Boolean @default(false)
+  /// true のとき全店舗を編集可（管理者、または従業員の「全店舗 編集」選択時）
+  editAllStores Boolean @default(false)
   /// 体入などシフト表からだけ使う仮キャスト（キャスト一覧・未提出一覧などから除外）
   isTrialGuest Boolean @default(false)
   createdAt    DateTime @default(now())
@@ -47,6 +49,8 @@ model User {
 model UserStoreAssignment {
   userId  String
   storeId String
+  /// false のとき、その店舗は閲覧のみ
+  canEdit Boolean @default(true)
   user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   store   Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 

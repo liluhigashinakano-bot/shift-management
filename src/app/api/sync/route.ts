@@ -3,6 +3,8 @@ import { syncToSheets, syncFromSheets } from "@/lib/sheet-sync";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
+import { prisma } from "@/lib/db";
+import { canEditStore } from "@/lib/store-access";
 
 function requireStaff(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -23,6 +25,15 @@ export async function POST(req: NextRequest) {
 
   if (!periodId) {
     return NextResponse.json({ error: "periodId required" }, { status: 400 });
+  }
+
+  const period = await prisma.shiftPeriod.findUnique({
+    where: { id: periodId },
+    select: { storeId: true },
+  });
+  if (!period) return NextResponse.json({ error: "Period not found" }, { status: 404 });
+  if (!canEditStore(session!.user as any, period.storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (direction === "toSheets") {

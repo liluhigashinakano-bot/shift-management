@@ -4,19 +4,28 @@ import { auth } from "@/lib/auth";
 import { assertShiftRequestsUnlocked } from "@/lib/shift-request-lock";
 import { assertShiftSlotsUnlocked, assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
 import { notifyCastShiftSubmitToDiscord } from "@/lib/discord-shift-submit-notify";
+import { canEditStore } from "@/lib/store-access";
 
 function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
 }
 
 /** キャスト: 希望締切＋表反映の締切。スタッフ: シフト確定ロックのみ */
-async function assertRequestMutationAllowed(role: string | undefined, periodId: string) {
+async function assertRequestMutationAllowed(session: any, role: string | undefined, periodId: string) {
   if (role === "cast") {
     const a = await assertShiftRequestsUnlocked(periodId);
     if (a) return a;
     return assertShiftSlotsUnlocked(periodId);
   }
   if (role === "admin" || role === "employee") {
+    const period = await prisma.shiftPeriod.findUnique({
+      where: { id: periodId },
+      select: { storeId: true },
+    });
+    if (!period) return NextResponse.json({ error: "Period not found" }, { status: 404 });
+    if (!canEditStore(session.user as any, period.storeId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     return assertStaffShiftPeriodNotFinalized(periodId);
   }
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -117,7 +126,7 @@ export async function POST(req: NextRequest) {
     if (role === "cast" && castId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const lockRes = await assertRequestMutationAllowed(role, periodId);
+    const lockRes = await assertRequestMutationAllowed(session, role, periodId);
     if (lockRes) return lockRes;
     const request = await prisma.shiftRequest.create({
       data: {
@@ -152,7 +161,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const lockBulk = await assertRequestMutationAllowed(role, periodId);
+    const lockBulk = await assertRequestMutationAllowed(session, role, periodId);
     if (lockBulk) return lockBulk;
 
     // 同じ日が複数回あれば最後の内容を採用
@@ -219,7 +228,7 @@ export async function POST(req: NextRequest) {
     if (role === "cast" && existing.castId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const lockUp = await assertRequestMutationAllowed(role, existing.periodId);
+    const lockUp = await assertRequestMutationAllowed(session, role, existing.periodId);
     if (lockUp) return lockUp;
 
     const oldDate = existing.date;
@@ -268,7 +277,7 @@ export async function POST(req: NextRequest) {
       select: { periodId: true },
     });
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const lockedSt = await assertStaffShiftPeriodNotFinalized(row.periodId);
+    const lockedSt = await assertRequestMutationAllowed(session, role, row.periodId);
     if (lockedSt) return lockedSt;
     await prisma.shiftRequest.update({
       where: { id },
@@ -293,7 +302,7 @@ export async function POST(req: NextRequest) {
     if (role === "cast" && existing.castId !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const lockedDel = await assertRequestMutationAllowed(role, existing.periodId);
+    const lockedDel = await assertRequestMutationAllowed(session, role, existing.periodId);
     if (lockedDel) return lockedDel;
     await removeCastSlotsForDay(existing.castId, existing.periodId, existing.date);
     await notifyCastShiftSubmitToDiscord(existing.castId, existing.periodId, {

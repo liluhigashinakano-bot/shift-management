@@ -22,7 +22,8 @@ export function PermissionAccountForm({
   const [name, setName] = useState("");
   const [role, setRole] = useState<RoleChoice>("employee");
   const [loginId, setLoginId] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [viewSelected, setViewSelected] = useState<Set<string>>(new Set());
+  const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [resultModal, setResultModal] = useState<{
     loginId: string;
@@ -30,22 +31,59 @@ export function PermissionAccountForm({
     label: string;
   } | null>(null);
 
-  const toggleStore = (id: string) => {
-    setSelected((prev) => {
+  const toggleViewStore = (id: string) => {
+    setViewSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    setEditSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
-  const allSelected = useMemo(() => selected.has(ALL_STORES_VALUE), [selected]);
+  const toggleEditStore = (id: string) => {
+    if (role === "viewer") return;
+    setEditSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setViewSelected((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
 
-  const setAllStores = (on: boolean) => {
+  const viewAllSelected = useMemo(() => viewSelected.has(ALL_STORES_VALUE), [viewSelected]);
+  const editAllSelected = useMemo(() => editSelected.has(ALL_STORES_VALUE), [editSelected]);
+
+  const setViewAllStores = (on: boolean) => {
     if (on) {
-      setSelected(new Set([ALL_STORES_VALUE]));
+      setViewSelected(new Set([ALL_STORES_VALUE]));
     } else {
-      setSelected(new Set());
+      setViewSelected(new Set());
+      setEditSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(ALL_STORES_VALUE);
+        return next;
+      });
+    }
+  };
+
+  const setEditAllStores = (on: boolean) => {
+    if (role === "viewer") return;
+    if (on) {
+      setEditSelected(new Set([ALL_STORES_VALUE]));
+      setViewSelected(new Set([ALL_STORES_VALUE]));
+    } else {
+      setEditSelected(new Set());
     }
   };
 
@@ -55,18 +93,22 @@ export function PermissionAccountForm({
     if (!trimmedName || !idNorm) return;
 
     if (role !== "admin") {
-      if (allSelected) {
+      if (viewAllSelected || editAllSelected) {
         /* ok */
-      } else if (selected.size === 0) {
-        alert("所属店舗を1つ以上選ぶか、「全店舗」を選択してください。");
+      } else if (viewSelected.size === 0 && editSelected.size === 0) {
+        alert("閲覧または編集できる店舗を1つ以上選んでください。");
         return;
       }
     }
 
-    const storeIds = allSelected
+    const viewStoreIds = viewAllSelected
       ? []
-      : Array.from(selected).filter((x) => x !== ALL_STORES_VALUE);
-    const accessAllStores = role === "admin" ? true : allSelected;
+      : Array.from(viewSelected).filter((x) => x !== ALL_STORES_VALUE);
+    const editStoreIds = editAllSelected
+      ? []
+      : Array.from(editSelected).filter((x) => x !== ALL_STORES_VALUE);
+    const accessAllStores = role === "admin" ? true : viewAllSelected || editAllSelected;
+    const editAllStores = role === "admin" ? true : role === "employee" && editAllSelected;
 
     setSaving(true);
     try {
@@ -79,7 +121,9 @@ export function PermissionAccountForm({
           role,
           loginId: idNorm,
           accessAllStores,
-          storeIds,
+          editAllStores,
+          viewStoreIds,
+          editStoreIds,
         }),
       });
       const raw = await res.text();
@@ -101,7 +145,8 @@ export function PermissionAccountForm({
         });
         setName("");
         setLoginId("");
-        setSelected(new Set());
+        setViewSelected(new Set());
+        setEditSelected(new Set());
         setRole("employee");
         onCreated?.();
       }
@@ -157,7 +202,10 @@ export function PermissionAccountForm({
             type="radio"
             name="role"
             checked={role === "viewer"}
-            onChange={() => setRole("viewer")}
+            onChange={() => {
+              setRole("viewer");
+              setEditSelected(new Set());
+            }}
           />
           <span>
             <span className="font-medium">閲覧者</span>
@@ -172,28 +220,58 @@ export function PermissionAccountForm({
       {role !== "admin" && (
         <div className="space-y-2">
           <Label>所属店舗（複数可）</Label>
-          <label className="flex items-center gap-2 text-sm font-medium border rounded-md px-3 py-2 bg-white">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={(e) => setAllStores(e.target.checked)}
-            />
-            全店舗
-          </label>
-          {!allSelected && (
-            <div className="grid gap-2 sm:grid-cols-2 border rounded-md p-3 bg-gray-50/80 max-h-56 overflow-y-auto">
-              {stores.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(s.id)}
-                    onChange={() => toggleStore(s.id)}
-                  />
-                  {s.name}
-                </label>
-              ))}
+          <div className="space-y-2 rounded-md border bg-gray-50/80 p-3">
+            <div className="grid grid-cols-[1fr_64px_64px] items-center gap-2 text-xs font-medium text-muted-foreground">
+              <span>店舗</span>
+              <span className="text-center">編集</span>
+              <span className="text-center">閲覧</span>
             </div>
-          )}
+            <div className="grid grid-cols-[1fr_64px_64px] items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-medium">
+              <span>全店舗</span>
+              <input
+                type="checkbox"
+                className="mx-auto"
+                checked={editAllSelected}
+                disabled={role === "viewer"}
+                onChange={(e) => setEditAllStores(e.target.checked)}
+              />
+              <input
+                type="checkbox"
+                className="mx-auto"
+                checked={viewAllSelected}
+                onChange={(e) => setViewAllStores(e.target.checked)}
+              />
+            </div>
+            {!editAllSelected && (
+              <div className="space-y-1 max-h-56 overflow-y-auto">
+                {stores.map((s) => (
+                  <div
+                    key={s.id}
+                    className="grid grid-cols-[1fr_64px_64px] items-center gap-2 rounded-md bg-white px-3 py-2 text-sm"
+                  >
+                    <span>{s.name}</span>
+                    <input
+                      type="checkbox"
+                      className="mx-auto"
+                      checked={editSelected.has(s.id)}
+                      disabled={role === "viewer"}
+                      onChange={() => toggleEditStore(s.id)}
+                    />
+                    <input
+                      type="checkbox"
+                      className="mx-auto"
+                      checked={viewAllSelected || viewSelected.has(s.id)}
+                      disabled={viewAllSelected}
+                      onChange={() => toggleViewStore(s.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            編集にチェックした店舗は閲覧も可能です。閲覧だけの店舗ではシフト表などを変更できません。
+          </p>
         </div>
       )}
 
@@ -231,7 +309,11 @@ export function PermissionAccountForm({
           saving ||
           !name.trim() ||
           !loginId.trim() ||
-          (role !== "admin" && !allSelected && selected.size === 0)
+          (role !== "admin" &&
+            !viewAllSelected &&
+            !editAllSelected &&
+            viewSelected.size === 0 &&
+            editSelected.size === 0)
         }
         onClick={() => void submit()}
       >

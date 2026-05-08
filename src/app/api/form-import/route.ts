@@ -4,6 +4,7 @@ import { readSheet, isSheetsConfigured } from "@/lib/google-sheets";
 import { auth } from "@/lib/auth";
 import { normalizeSheetDateToYmd } from "@/lib/sheet-date";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
+import { canEditStore } from "@/lib/store-access";
 
 function requireStaff(session: any) {
   if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -40,6 +41,9 @@ export async function POST(req: NextRequest) {
 
   if (!period) {
     return NextResponse.json({ error: "Period not found" }, { status: 404 });
+  }
+  if (!canEditStore(session!.user as any, period.storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const staffLock = await assertStaffShiftPeriodNotFinalized(periodId);

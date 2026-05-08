@@ -7,7 +7,7 @@ import { SyncButtons } from "@/components/sync-buttons";
 import { ShiftPeriodLocksPanel } from "@/components/shift-period-locks-panel";
 import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirmed-publish-panel";
 import Link from "next/link";
-import { assertStorePageAccess, getAccessibleStoreIds } from "@/lib/store-access";
+import { assertStorePageAccess, canEditStore, getAccessibleStoreIds } from "@/lib/store-access";
 import { ShiftSheetStoreTitle } from "@/components/shift-sheet-store-title";
 
 export const dynamic = "force-dynamic";
@@ -182,10 +182,7 @@ export default async function ShiftPage({
     ];
   }
 
-  const isAdmin =
-    (session.user as any).role === "admin" ||
-    (session.user as any).role === "employee";
-  const isViewer = (session.user as any).role === "viewer";
+  const canEditCurrentStore = canEditStore(session.user as any, storeId);
 
   return (
     <div className="min-h-dvh shift-sheet-print-page">
@@ -212,7 +209,7 @@ export default async function ShiftPage({
             halfLabel={halfLabel}
             storeOptions={JSON.parse(JSON.stringify(storeOptions))}
           />
-          {isAdmin && (
+          {canEditCurrentStore && (
             <div className="shrink-0 flex flex-wrap items-center gap-1">
               <ShiftPeriodLocksPanel
                 periodId={periodId}
@@ -250,7 +247,7 @@ export default async function ShiftPage({
             >
               調整一覧
             </Link>
-            {isAdmin && (
+            {canEditCurrentStore && (
               <SyncButtons
                 periodId={periodId}
                 sheetsImportDisabled={Boolean(period.adjustmentConfirmedPublished)}
@@ -270,8 +267,8 @@ export default async function ShiftPage({
             name: c.name,
             store: c.store,
           }))}
-          readOnly={isViewer}
-          bypassShiftPeriodLocks={isAdmin}
+          readOnly={!canEditCurrentStore}
+          bypassShiftPeriodLocks={canEditCurrentStore}
         />
       </main>
     </div>
