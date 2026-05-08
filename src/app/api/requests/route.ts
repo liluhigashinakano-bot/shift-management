@@ -10,6 +10,15 @@ function getRole(session: any) {
   return (session?.user as any)?.role as string | undefined;
 }
 
+function sameCalendarDay(a: Date, b: Date): boolean {
+  return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+}
+
+function normalizeNotes(notes: string | null | undefined): string | null {
+  const trimmed = notes?.trim();
+  return trimmed ? trimmed : null;
+}
+
 /** キャスト: 希望締切＋表反映の締切。スタッフ: シフト確定ロックのみ */
 async function assertRequestMutationAllowed(session: any, role: string | undefined, periodId: string) {
   if (role === "cast") {
@@ -173,40 +182,65 @@ export async function POST(req: NextRequest) {
     const merged = [...byCalendarDay.values()];
     const datesToReplace = merged.map((e) => new Date(e.date));
 
+    const existingRequests = datesToReplace.length > 0
+      ? await prisma.shiftRequest.findMany({
+          where: { castId, periodId, date: { in: datesToReplace } },
+          select: { date: true, startTime: true, endTime: true, notes: true },
+        })
+      : [];
+    const existingByDate = new Map(
+      existingRequests.map((r) => [r.date.toISOString().slice(0, 10), r]),
+    );
+    const changed = merged.filter((e) => {
+      const date = new Date(e.date);
+      const existing = existingByDate.get(date.toISOString().slice(0, 10));
+      if (!existing) return true;
+      return (
+        existing.startTime !== e.startTime ||
+        existing.endTime !== e.endTime ||
+        normalizeNotes(existing.notes) !== normalizeNotes(e.notes)
+      );
+    });
+    const datesToChange = changed.map((e) => new Date(e.date));
+
     // 今回チェックした日付の希望だけ置き換え（他の日は残す。全削除すると追加分だけになって上書きに見える）
-    if (datesToReplace.length > 0) {
+    if (datesToChange.length > 0) {
       await prisma.shiftRequest.deleteMany({
-        where: { castId, periodId, date: { in: datesToReplace } },
+        where: { castId, periodId, date: { in: datesToChange } },
       });
     }
 
-    const data = merged.map((e) => ({
+    const data = changed.map((e) => ({
       castId,
       periodId,
       date: new Date(e.date),
       startTime: e.startTime,
       endTime: e.endTime,
-      notes: e.notes || null,
+      notes: normalizeNotes(e.notes),
       status: "approved" as const,
     }));
 
-    await prisma.shiftRequest.createMany({ data });
+    if (data.length > 0) {
+      await prisma.shiftRequest.createMany({ data });
+    }
 
-    for (const entry of merged) {
+    for (const entry of changed) {
       await applyToShiftTable(castId, periodId, new Date(entry.date), entry.startTime, entry.endTime, entry.notes);
     }
 
-    const sortedForNotify = [...merged].sort(
+    const sortedForNotify = [...changed].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
-    await notifyCastShiftSubmitToDiscord(castId, periodId, {
-      kind: "bulk",
-      entries: sortedForNotify.map((e) => ({
-        date: new Date(e.date),
-        startTime: e.startTime,
-        endTime: e.endTime,
-      })),
-    });
+    if (sortedForNotify.length > 0) {
+      await notifyCastShiftSubmitToDiscord(castId, periodId, {
+        kind: "bulk",
+        entries: sortedForNotify.map((e) => ({
+          date: new Date(e.date),
+          startTime: e.startTime,
+          endTime: e.endTime,
+        })),
+      });
+    }
 
     return NextResponse.json({ ok: true, count: data.length });
   }
@@ -222,7 +256,7 @@ export async function POST(req: NextRequest) {
     };
     const existing = await prisma.shiftRequest.findUnique({
       where: { id },
-      select: { castId: true, periodId: true, date: true },
+      select: { castId: true, periodId: true, date: true, startTime: true, endTime: true, notes: true },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (role === "cast" && existing.castId !== session.user.id) {
@@ -235,6 +269,17 @@ export async function POST(req: NextRequest) {
     const newDate = new Date(date);
     const oldStr = new Date(oldDate).toDateString();
     const newStr = newDate.toDateString();
+    const nextNotes = normalizeNotes(notes);
+
+    const hasChange =
+      !sameCalendarDay(oldDate, newDate) ||
+      existing.startTime !== startTime ||
+      existing.endTime !== endTime ||
+      normalizeNotes(existing.notes) !== nextNotes;
+
+    if (!hasChange) {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
 
     if (oldStr !== newStr) {
       await removeCastSlotsForDay(existing.castId, existing.periodId, oldDate);
@@ -246,7 +291,7 @@ export async function POST(req: NextRequest) {
         date: newDate,
         startTime,
         endTime,
-        notes: notes ?? null,
+        notes: nextNotes,
         status: "approved",
       },
     });
@@ -256,14 +301,14 @@ export async function POST(req: NextRequest) {
       newDate,
       startTime,
       endTime,
-      notes ?? null,
+      nextNotes,
     );
     await notifyCastShiftSubmitToDiscord(existing.castId, existing.periodId, {
       kind: "update",
       date: newDate,
       startTime,
       endTime,
-      notes,
+      notes: nextNotes,
     });
     return NextResponse.json({ ok: true });
   }
