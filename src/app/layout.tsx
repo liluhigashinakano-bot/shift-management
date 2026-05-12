@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Kosugi_Maru } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
+import { StagingBanner } from "@/components/staging-banner";
 import "./globals.css";
 
 /** Google Fonts — 小杉丸（日本語 UI 向けの丸ゴシック） */
@@ -45,6 +46,7 @@ export default function RootLayout({
       className={`${kosugiMaru.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-dvh flex flex-col bg-gradient-to-br from-pink-50/50 via-purple-50/30 to-sky-50/50">
+        <StagingBanner />
         <Providers>{children}</Providers>
         <Toaster />
       </body>
