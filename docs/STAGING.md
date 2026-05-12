@@ -50,3 +50,24 @@ git push -u origin staging
 
 - **本番 DB の URL をステージングに渡さない**（誤操作・テストデータ混入のリスク）。
 - ステージングでも `prisma migrate deploy` が起動時に走るため、**マイグレーションは本番と同じ順序**で適用されます。スキーマ変更は「ステージングで先に確認 → 問題なければ本番」の順が安全です。
+
+## Prisma migrate が失敗したとき（P3009 / P3018）
+
+**ステージングで一度だけ失敗した**場合、`"_prisma_migrations"` に **failed** な記録が残り、以降すべて拒否されます。いずれかで解消してください。
+
+1. **空の検証 DB なら**（データ不要）: Railway の Postgres を**新規作成し直す**か、変数の `DATABASE_URL` を新しい DB に差し替えてから再デプロイするのが最も簡単です。
+2. **中身を残したい**場合: `psql` や Railway の SQL コンソールで以下を確認し、[Prisma の公式手順](https://www.prisma.io/docs/guides/migrate/production-troubleshooting)に沿って `migrate resolve` などで整合を取ります。
+
+`User` が無いのに `ALTER TABLE "User"` だけが走るエラーは、**マイグレーション名の辞書順**が `init` より前になっていたことが原因でした。リポジトリでは `isTrialGuest` 用フォルダを **`20260413160721_init` の直後**になるよう整えています。
+
+### 本番 DB に古いフォルダ名だけが記録されている場合
+
+以前の名前 `20260202120000_user_is_trial_guest` で **すでに適用済み**の本番だけ、`_prisma_migrations` の行を新しい名前に合わせます（`migration.sql` の中身は同じなので checksum はそのまま通常問題になりません）。
+
+```sql
+UPDATE "_prisma_migrations"
+SET migration_name = '20260413160800_user_is_trial_guest'
+WHERE migration_name = '20260202120000_user_is_trial_guest';
+```
+
+未適用の環境ではこの SQL は不要です。デプロイ後に `prisma migrate deploy` が通ることを確認してください。
