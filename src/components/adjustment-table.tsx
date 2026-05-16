@@ -239,11 +239,18 @@ export function AdjustmentTable({
                         const inCurrent = inRemote || inLocal;
 
                         const dayAdj = adjByDay.get(day.id);
-                        const isCut = dayAdj?.some((a) => a.action === "cut");
+                        const cutAdj = dayAdj?.find((a) => a.action === "cut");
+                        const isCut = Boolean(cutAdj);
                         const isHelp = dayAdj?.some((a) => a.action === "help");
 
                         // 希望セル: この時間が希望範囲内か
-                        const inRequest = req && slot >= req.startTime && slot < req.endTime;
+                        const requestStart = req?.startTime ?? cutAdj?.originalStart ?? null;
+                        const requestEnd = req?.endTime ?? cutAdj?.originalEnd ?? null;
+                        const inRequest =
+                          requestStart !== null &&
+                          requestEnd !== null &&
+                          slot >= requestStart &&
+                          slot < requestEnd;
 
                         // 希望セルの色
                         let reqBg = "";
@@ -267,8 +274,8 @@ export function AdjustmentTable({
                           }
                         }
 
-                        const isReqStart = inRequest && req && slot === req.startTime;
-                        const isReqEnd = inRequest && req && slot + 0.5 >= req.endTime;
+                        const isReqStart = inRequest && requestStart !== null && slot === requestStart;
+                        const isReqEnd = inRequest && requestEnd !== null && slot + 0.5 >= requestEnd;
 
                         const isRemoteStart =
                           inRemote && remote && slot === remote.startTime;
@@ -292,8 +299,12 @@ export function AdjustmentTable({
                           <React.Fragment key={day.id}>
                             {/* 希望セル */}
                             <td className={`${hourBorder} px-0.5 py-0 text-[8px] text-center align-top ${reqBg}`} style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}>
-                              {isReqStart && <span className="text-blue-700 font-bold">{formatTimeSlot(req!.startTime)}</span>}
-                              {isReqEnd && !isReqStart && <span className="text-blue-500">{formatTimeSlot(req!.endTime)}</span>}
+                              {isReqStart && requestStart !== null && (
+                                <span className="text-blue-700 font-bold">{formatTimeSlot(requestStart)}</span>
+                              )}
+                              {isReqEnd && !isReqStart && requestEnd !== null && (
+                                <span className="text-blue-500">{formatTimeSlot(requestEnd)}</span>
+                              )}
                               {inRequest && !isReqStart && !isReqEnd && <span className="text-blue-300">│</span>}
                               {isCut && isReqStart && <span className="line-through text-red-400 ml-0.5">削除</span>}
                               {isHelp && isReqStart && !isCut && (
