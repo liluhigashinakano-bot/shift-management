@@ -7,6 +7,7 @@ export async function proxy(request: Request) {
   // 公開ページ
   if (
     pathname === "/login" ||
+    pathname === "/api/health" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".")
