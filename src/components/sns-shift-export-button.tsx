@@ -303,7 +303,7 @@ function drawCalendar(
   const gridW = width - gridX * 2;
   const gridH = height - gridY - 145;
   const colW = gridW / 7;
-  const weekdayH = 110;
+  const weekdayH = 72;
   const dateH = weeks.length >= 4 ? 82 : 112;
   const bodyH = (gridH - weekdayH - dateH * weeks.length) / weeks.length;
   const lineColor = "rgba(122, 122, 122, 0.82)";
@@ -326,7 +326,7 @@ function drawCalendar(
     ctx.fillRect(x, gridY, colW, weekdayH);
 
     ctx.fillStyle = col === 0 ? "#d94672" : col === 6 ? "#1887a8" : "#8a8a8a";
-    ctx.font = `500 76px ${ROUND_JP_FONT}`;
+    ctx.font = `500 54px ${ROUND_JP_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(WEEKDAYS[col], x + colW / 2, gridY + weekdayH / 2 + 4);
