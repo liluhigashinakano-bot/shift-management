@@ -9,6 +9,7 @@ import { AdjustmentConfirmedPublishPanel } from "@/components/adjustment-confirm
 import Link from "next/link";
 import { assertStorePageAccess, canEditStore, getAccessibleStoreIds } from "@/lib/store-access";
 import { ShiftSheetStoreTitle } from "@/components/shift-sheet-store-title";
+import { SnsShiftExportButton } from "@/components/sns-shift-export-button";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,18 @@ export default async function ShiftPage({
   }
 
   const canEditCurrentStore = canEditStore(session.user as any, storeId);
+  const snsExportShiftDays = period.shiftDays.map((day) => ({
+    id: day.id,
+    date: day.date.toISOString(),
+    shiftSlots: day.shiftSlots.map((slot) => ({
+      castId: slot.castId,
+      timeSlot: slot.timeSlot,
+      cast: {
+        name: slot.cast.name,
+        isTrialGuest: slot.cast.isTrialGuest,
+      },
+    })),
+  }));
 
   return (
     <div className="min-h-dvh shift-sheet-print-page">
@@ -219,6 +232,13 @@ export default async function ShiftPage({
               <AdjustmentConfirmedPublishPanel
                 periodId={periodId}
                 initialPublished={Boolean(period.adjustmentConfirmedPublished)}
+              />
+              <SnsShiftExportButton
+                storeName={period.store.name}
+                year={period.year}
+                month={period.month}
+                half={period.half}
+                shiftDays={snsExportShiftDays}
               />
             </div>
           )}
