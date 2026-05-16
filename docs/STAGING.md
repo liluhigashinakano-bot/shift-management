@@ -16,6 +16,16 @@
 | `NEXT_PUBLIC_APP_ENV` | 未設定 or `production` | **`staging`**（画面上部にバナー表示） |
 | `DISCORD_SHIFT_SUBMIT_WEBHOOK_URL` | 実運用チャンネル | **テスト用 Webhook** 推奨（本番と分ける） |
 
+## 現在のステージング URL
+
+シフト管理アプリのステージング URL は次です。
+
+```text
+https://shift-management-staging.up.railway.app/login
+```
+
+`https://task-museum-staging.up.railway.app` は別アプリの URL なので、シフト管理アプリの確認には使いません。
+
 ## Railway での構築手順（概略）
 
 1. **プロジェクトを開く** → 右上の環境ドロップダウンで **New Environment** → 名前を `staging`。
@@ -50,6 +60,61 @@ git push -u origin staging
 
 - **本番 DB の URL をステージングに渡さない**（誤操作・テストデータ混入のリスク）。
 - ステージングでも `prisma migrate deploy` が起動時に走るため、**マイグレーションは本番と同じ順序**で適用されます。スキーマ変更は「ステージングで先に確認 → 問題なければ本番」の順が安全です。
+
+## 例外: ステージングを本番 DB と完全に同じにする場合
+
+通常は推奨しません。ステージング上の編集・削除・ロック操作が、そのまま本番データを変更します。
+
+それでも一時的に本番環境と完全一致させる場合は、Railway の `staging` 環境で **Postgres サービスではなく、アプリサービス `shift-management` 側の Variables** を開き、`DATABASE_URL` を production の Postgres `DATABASE_URL` と同じ値にします。その後、`staging` のアプリサービスを redeploy/restart します。
+
+作業後にステージング DB を分けた構成へ戻す場合は、`DATABASE_URL` を staging 用 Postgres の URL に戻して redeploy/restart します。
+
+## ステージング管理者ログインを復旧する SQL
+
+ステージング DB が空、または `admin@shift.local` のパスワードが分からなくなった場合にだけ使います。本番 DB では実行しません。
+
+```sql
+UPDATE "User"
+SET
+  "passwordHash" = '$2b$10$5gK3/Vv8aD1MEYQLnirsweRA2cGcZFmPmsnRg9yZlo75tYHAwDfLm',
+  "role" = 'admin',
+  "accessAllStores" = true,
+  "editAllStores" = true
+WHERE "email" = 'admin@shift.local';
+
+INSERT INTO "User" (
+  "id", "name", "email", "passwordHash", "role", "accessAllStores", "editAllStores", "createdAt"
+)
+SELECT
+  'admin-shift-local',
+  '管理者',
+  'admin@shift.local',
+  '$2b$10$5gK3/Vv8aD1MEYQLnirsweRA2cGcZFmPmsnRg9yZlo75tYHAwDfLm',
+  'admin',
+  true,
+  true,
+  CURRENT_TIMESTAMP
+WHERE NOT EXISTS (
+  SELECT 1 FROM "User" WHERE "email" = 'admin@shift.local'
+);
+```
+
+復旧後の初期ログイン:
+
+```text
+ID: admin@shift.local
+PASS: admin123
+```
+
+## ステージングにダミーデータを投入する
+
+店舗・社員・キャスト・現在表示対象のシフト期間・サンプルシフトをまとめて作る SQL は次に置いています。
+
+```text
+scripts/staging-dummy-data.sql
+```
+
+Railway の `staging` 環境で Postgres > Database > Query を開き、この SQL を丸ごと貼り付けて実行します。実行後にステージングのダッシュボードを再読み込みしてください。
 
 ## Prisma migrate が失敗したとき（P3009 / P3018）
 
