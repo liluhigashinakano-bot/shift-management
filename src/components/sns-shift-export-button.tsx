@@ -36,6 +36,7 @@ type CalendarCell = {
 const CANVAS_WIDTH = 3508;
 const CANVAS_HEIGHT = 2480;
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const ROUND_JP_FONT = '"Kosugi Maru", "Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
 
 function dateKey(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -77,6 +78,20 @@ function sanitizeFilename(value: string): string {
 
 function getHalfLabel(half: string): string {
   return half === "first" ? "前半" : "後半";
+}
+
+function baseStoreName(storeName: string): string {
+  return storeName.trim().replace(/店$/, "");
+}
+
+function isHigashiNakano(storeName: string): boolean {
+  return baseStoreName(storeName) === "東中野";
+}
+
+function storeNameWithSuffix(storeName: string): string {
+  const trimmed = storeName.trim();
+  if (!trimmed) return "店舗";
+  return trimmed.endsWith("店") ? trimmed : `${trimmed}店`;
 }
 
 function drawSoftBackground(ctx: CanvasRenderingContext2D, width: number, height: number) {
@@ -204,15 +219,61 @@ function drawCastName(
   maxWidth: number,
   fontSize: number,
 ) {
-  const fontFamily = '"Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
-  const size = fitFontSize(ctx, text, maxWidth, fontSize, 30, fontFamily, "800");
-  drawOutlinedText(ctx, text, x, y, {
-    font: `800 ${size}px ${fontFamily}`,
-    fill: "#111111",
-    stroke: "rgba(255, 255, 255, 0.96)",
-    lineWidth: Math.max(8, size * 0.18),
-    align: "center",
-    baseline: "middle",
+  const size = fitFontSize(ctx, text, maxWidth, fontSize, 30, ROUND_JP_FONT, "900");
+
+  ctx.save();
+  ctx.font = `900 ${size}px ${ROUND_JP_FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.98)";
+  ctx.lineWidth = Math.max(9, size * 0.24);
+  ctx.strokeText(text, x, y);
+
+  ctx.shadowColor = "rgba(0, 0, 0, 0.54)";
+  ctx.shadowBlur = Math.max(1, size * 0.03);
+  ctx.shadowOffsetX = Math.max(2, size * 0.06);
+  ctx.shadowOffsetY = Math.max(2, size * 0.06);
+  ctx.fillStyle = "#050505";
+  ctx.fillText(text, x, y);
+
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "#050505";
+  ctx.lineWidth = Math.max(2, size * 0.045);
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawStoreHeader(ctx: CanvasRenderingContext2D, storeName: string, width: number) {
+  if (isHigashiNakano(storeName)) {
+    drawBrandMark(ctx, width - 700, 124, 1.05);
+    ctx.fillStyle = "#a94778";
+    ctx.font = '400 170px Georgia, "Times New Roman", serif';
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Lilu", width - 570, 150);
+    ctx.font = `500 55px ${ROUND_JP_FONT}`;
+    ctx.fillStyle = "rgba(95, 68, 78, 0.82)";
+    ctx.fillText("Girls bar", width - 555, 222);
+    ctx.font = `700 40px ${ROUND_JP_FONT}`;
+    ctx.fillStyle = "rgba(95, 68, 78, 0.72)";
+    ctx.textAlign = "right";
+    ctx.fillText(baseStoreName(storeName), width - 105, 272);
+    return;
+  }
+
+  const label = storeNameWithSuffix(storeName);
+  const size = fitFontSize(ctx, label, 820, 86, 52, ROUND_JP_FONT, "800");
+  drawOutlinedText(ctx, label, width - 105, 168, {
+    font: `800 ${size}px ${ROUND_JP_FONT}`,
+    fill: "#a94778",
+    stroke: "rgba(255, 255, 255, 0.82)",
+    lineWidth: 8,
+    align: "right",
+    baseline: "alphabetic",
   });
 }
 
@@ -234,19 +295,7 @@ function drawCalendar(
     lineWidth: 12,
   });
 
-  drawBrandMark(ctx, width - 700, 124, 1.05);
-  ctx.fillStyle = "#a94778";
-  ctx.font = '400 170px Georgia, "Times New Roman", serif';
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("Lilu", width - 570, 150);
-  ctx.font = '500 55px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
-  ctx.fillStyle = "rgba(95, 68, 78, 0.82)";
-  ctx.fillText("Girls bar", width - 555, 222);
-  ctx.font = '700 40px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
-  ctx.fillStyle = "rgba(95, 68, 78, 0.72)";
-  ctx.textAlign = "right";
-  ctx.fillText(props.storeName, width - 105, 272);
+  drawStoreHeader(ctx, props.storeName, width);
 
   const weeks = buildCalendarWeeks(props.year, props.month, props.half);
   const gridX = 100;
@@ -254,7 +303,7 @@ function drawCalendar(
   const gridW = width - gridX * 2;
   const gridH = height - gridY - 145;
   const colW = gridW / 7;
-  const weekdayH = 220;
+  const weekdayH = 110;
   const dateH = weeks.length >= 4 ? 82 : 112;
   const bodyH = (gridH - weekdayH - dateH * weeks.length) / weeks.length;
   const lineColor = "rgba(122, 122, 122, 0.82)";
@@ -277,7 +326,7 @@ function drawCalendar(
     ctx.fillRect(x, gridY, colW, weekdayH);
 
     ctx.fillStyle = col === 0 ? "#d94672" : col === 6 ? "#1887a8" : "#8a8a8a";
-    ctx.font = '500 102px "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif';
+    ctx.font = `500 76px ${ROUND_JP_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(WEEKDAYS[col], x + colW / 2, gridY + weekdayH / 2 + 4);
