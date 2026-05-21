@@ -19,4 +19,4 @@ ENV HOSTNAME=0.0.0.0
 RUN npm run build
 
 # 本番DBに未適用のマイグレーションを反映してから起動（カラム追加漏れによる 500 を防ぐ）
-CMD ["sh", "-c", "npx prisma migrate deploy && exec npx next start --hostname 0.0.0.0 --port ${PORT:-3000}"]
+CMD ["sh", "-c", "exec npx next start --hostname 0.0.0.0 --port ${PORT:-3000}"]
