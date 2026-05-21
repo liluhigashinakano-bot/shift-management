@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPublicOrigin } from "@/lib/public-origin";
@@ -48,6 +48,21 @@ export function NavHeader({ user }: Props) {
   const homeHref = user.role === "cast" ? "/" : "/dashboard";
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = filterNavItems(user);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => {
+      if (media.matches) setMobileOpen(false);
+    };
+
+    closeOnDesktop();
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   const linkClass = (href: string) =>
     cn(
@@ -113,7 +128,8 @@ export function NavHeader({ user }: Props) {
             >
               <Menu className="size-5" />
             </SheetTrigger>
-            <SheetContent side="right" className="w-[min(100vw-1rem,20rem)]">
+            {mobileOpen && (
+              <SheetContent side="right" className="w-[min(100vw-1rem,20rem)]">
               <SheetHeader>
                 <SheetTitle>メニュー</SheetTitle>
               </SheetHeader>
@@ -155,7 +171,8 @@ export function NavHeader({ user }: Props) {
                   </button>
                 </div>
               </div>
-            </SheetContent>
+              </SheetContent>
+            )}
           </Sheet>
         </div>
       </div>
