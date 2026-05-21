@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 type Props = {
   open: boolean;
@@ -10,42 +10,50 @@ type Props = {
 };
 
 export function Modal({ open, onClose, title, children }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
   useEffect(() => {
-    const el = dialogRef.current;
-    if (!el) return;
-    if (open && !el.open) {
-      el.showModal();
-    } else if (!open && el.open) {
-      el.close();
-    }
+    if (!open) return;
 
-    return () => {
-      if (el.open) {
-        el.close();
-      }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
     };
-  }, [open]);
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open) return null;
 
   return (
-    <dialog
-      ref={dialogRef}
-      onClose={onClose}
-      className="backdrop:bg-black/30 rounded-xl shadow-xl p-0 max-w-md w-full"
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 px-4 py-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold">{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-lg leading-none"
-          >
-            &times;
-          </button>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-modal-title"
+        className="max-h-[calc(100dvh-3rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-0 shadow-xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 id="app-modal-title" className="text-base font-bold">
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-lg leading-none text-gray-400 hover:text-gray-600"
+            >
+              &times;
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
-    </dialog>
+    </div>
   );
 }
