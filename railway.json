@@ -5,6 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
+    "preDeployCommand": null,
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 900,
     "restartPolicyType": "ON_FAILURE",
