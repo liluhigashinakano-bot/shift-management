@@ -227,6 +227,12 @@ export default async function DashboardPage({
                         {period && (
                           <div className="flex items-center gap-2">
                             <Link
+                              href={`/work-hours/${store.id}/${period.id}`}
+                              className="text-xs text-emerald-600 hover:text-emerald-800"
+                            >
+                              総時間
+                            </Link>
+                            <Link
                               href={`/requests/${store.id}/${period.id}`}
                               className="text-xs text-blue-600 hover:text-blue-800"
                             >
