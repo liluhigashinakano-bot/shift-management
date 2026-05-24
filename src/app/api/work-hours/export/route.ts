@@ -23,7 +23,7 @@ type CastCsvSummary = {
 type CastCsvRow = {
   period: ShiftPeriodKey;
   periodLabel: string;
-  shiftStoreName: string;
+  workStoreName: string;
   castName: string;
   workDays: number;
   homeStoreName: string | null;
@@ -42,10 +42,10 @@ function formatCsvNumber(value: number): string {
 function buildCsv(rows: CastCsvRow[]): string {
   const header = [
     "対象期間",
-    "シフト表店舗",
     "キャスト名",
     "出勤日数",
     "所属店舗",
+    "出勤店舗",
     "総労働時間(h)",
   ];
   const lines = [
@@ -53,10 +53,10 @@ function buildCsv(rows: CastCsvRow[]): string {
     ...rows.map((row) =>
       [
         row.periodLabel,
-        row.shiftStoreName,
         row.castName,
         row.workDays,
         row.homeStoreName ?? "",
+        row.workStoreName,
         formatCsvNumber(row.totalHours),
       ]
         .map(csvCell)
@@ -198,7 +198,7 @@ export async function GET(req: NextRequest) {
       rows.push({
         period: periodKey,
         periodLabel,
-        shiftStoreName: period.store.name,
+        workStoreName: period.store.name,
         castName: row.name,
         workDays: row.dayKeys.size,
         homeStoreName: row.storeName,
@@ -210,8 +210,8 @@ export async function GET(req: NextRequest) {
   rows.sort((a, b) => {
     const periodCompare = periodIndex(a.period) - periodIndex(b.period);
     if (periodCompare !== 0) return periodCompare;
-    const shiftStoreCompare = a.shiftStoreName.localeCompare(b.shiftStoreName, "ja");
-    if (shiftStoreCompare !== 0) return shiftStoreCompare;
+    const workStoreCompare = a.workStoreName.localeCompare(b.workStoreName, "ja");
+    if (workStoreCompare !== 0) return workStoreCompare;
     const hourDiff = b.totalHours - a.totalHours;
     if (hourDiff !== 0) return hourDiff;
     return a.castName.localeCompare(b.castName, "ja");
