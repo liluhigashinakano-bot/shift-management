@@ -112,7 +112,7 @@ export default async function DashboardPage({
   const effectiveNext = nextPeriod(effectiveStart);
   const effectiveShowSecondRow = periodIndex(effectiveNext) <= periodIndex(maxFuturePeriod);
   const effectiveDisplayPeriods: ShiftPeriodKey[] = effectiveShowSecondRow ? [effectiveStart, effectiveNext] : [effectiveStart];
-  const csvExportHref = `/api/work-hours/export?start=${effectiveStart.month}-${effectiveStart.half}`;
+  const csvExportHref = `/api/work-hours/export?year=${selectedYear}`;
 
   // 表示対象の店舗×期間は未作成なら自動で作成（手動「＋作成」不要）
   for (const store of stores) {
@@ -166,7 +166,7 @@ export default async function DashboardPage({
               className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-sm hover:bg-emerald-50 sm:text-sm whitespace-nowrap"
             >
               <Download className="h-4 w-4" aria-hidden="true" />
-              CSV出力
+              半月別CSV出力
             </a>
             <form method="get" className="flex flex-wrap items-center gap-3">
               <label className="text-sm font-bold text-gray-600">

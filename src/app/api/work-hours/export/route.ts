@@ -1,12 +1,9 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { ensureShiftPeriod } from "@/lib/ensure-shift-period";
 import { castSuffixForShiftBadge } from "@/lib/cast-display-name";
 import {
   halfLabel,
-  nextPeriod,
-  periodFromNow,
   periodIndex,
   type ShiftHalf,
   type ShiftPeriodKey,
@@ -23,23 +20,15 @@ type CastCsvSummary = {
   dayKeys: Set<string>;
 };
 
-function parseStart(
-  rawStart: string | null,
-  defaultStart: ShiftPeriodKey,
-  maxFuturePeriod: ShiftPeriodKey,
-): ShiftPeriodKey {
-  if (!rawStart) return defaultStart;
-
-  const [mRaw, hRaw] = rawStart.split("-");
-  const month = Number(mRaw);
-  const half: ShiftHalf = hRaw === "second" ? "second" : "first";
-  if (!month || month < 1 || month > 12) return defaultStart;
-
-  const candidate = { year: defaultStart.year, month, half };
-  return periodIndex(candidate) > periodIndex(maxFuturePeriod)
-    ? defaultStart
-    : candidate;
-}
+type CastCsvRow = {
+  period: ShiftPeriodKey;
+  periodLabel: string;
+  shiftStoreName: string;
+  castName: string;
+  workDays: number;
+  homeStoreName: string | null;
+  totalHours: number;
+};
 
 function csvCell(value: string | number | null | undefined): string {
   const text = value == null ? "" : String(value);
@@ -50,16 +39,25 @@ function formatCsvNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function buildCsv(rows: CastCsvSummary[]): string {
-  const header = ["キャスト名", "出勤日数", "所属店舗", "総労働時間(h)"];
+function buildCsv(rows: CastCsvRow[]): string {
+  const header = [
+    "対象期間",
+    "シフト表店舗",
+    "キャスト名",
+    "出勤日数",
+    "所属店舗",
+    "総労働時間(h)",
+  ];
   const lines = [
     header.map(csvCell).join(","),
     ...rows.map((row) =>
       [
-        row.name,
-        row.dayKeys.size,
-        row.storeName ?? "",
-        formatCsvNumber(row.slotCount * 0.5),
+        row.periodLabel,
+        row.shiftStoreName,
+        row.castName,
+        row.workDays,
+        row.homeStoreName ?? "",
+        formatCsvNumber(row.totalHours),
       ]
         .map(csvCell)
         .join(","),
@@ -90,29 +88,8 @@ export async function GET(req: NextRequest) {
       : allStores.filter((store) => allowedIds.includes(store.id));
   const storeIds = stores.map((store) => store.id);
 
-  const now = new Date();
-  const currentPeriod = periodFromNow(now);
-  const maxFuturePeriod = nextPeriod(currentPeriod);
-  const defaultStart: ShiftPeriodKey =
-    periodIndex(currentPeriod) <= periodIndex(maxFuturePeriod)
-      ? currentPeriod
-      : { year: currentPeriod.year, month: maxFuturePeriod.month, half: "first" };
-  const selectedStart = parseStart(
-    req.nextUrl.searchParams.get("start"),
-    defaultStart,
-    maxFuturePeriod,
-  );
-  const selectedNext = nextPeriod(selectedStart);
-  const displayPeriods =
-    periodIndex(selectedNext) <= periodIndex(maxFuturePeriod)
-      ? [selectedStart, selectedNext]
-      : [selectedStart];
-
-  for (const store of stores) {
-    for (const period of displayPeriods) {
-      await ensureShiftPeriod(store.id, period.year, period.month, period.half);
-    }
-  }
+  const yearParam = req.nextUrl.searchParams.get("year");
+  const yearFilter = yearParam ? Number(yearParam) : null;
 
   const castRows = await prisma.user.findMany({
     where: {
@@ -123,45 +100,27 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       name: true,
+      storeId: true,
       store: { select: { name: true } },
     },
     orderBy: [{ store: { name: "asc" } }, { name: "asc" }],
   });
-
-  const summaries = new Map<string, CastCsvSummary>();
-  const ensureSummary = (
-    castId: string,
-    name: string,
-    storeName: string | null,
-  ) => {
-    const existing = summaries.get(castId);
-    if (existing) return existing;
-    const summary: CastCsvSummary = {
-      castId,
-      name,
-      storeName,
-      slotCount: 0,
-      dayKeys: new Set<string>(),
-    };
-    summaries.set(castId, summary);
-    return summary;
-  };
-
+  const castsByStoreId = new Map<string, typeof castRows>();
   for (const cast of castRows) {
-    ensureSummary(cast.id, cast.name, cast.store?.name ?? null);
+    if (!cast.storeId) continue;
+    if (!castsByStoreId.has(cast.storeId)) castsByStoreId.set(cast.storeId, []);
+    castsByStoreId.get(cast.storeId)!.push(cast);
   }
 
   const periods = storeIds.length
     ? await prisma.shiftPeriod.findMany({
         where: {
           storeId: { in: storeIds },
-          OR: displayPeriods.map((period) => ({
-            year: period.year,
-            month: period.month,
-            half: period.half,
-          })),
+          ...(yearFilter && Number.isInteger(yearFilter) ? { year: yearFilter } : {}),
         },
+        orderBy: [{ year: "asc" }, { month: "asc" }, { half: "asc" }, { store: { name: "asc" } }],
         include: {
+          store: { select: { name: true } },
           shiftDays: {
             select: {
               date: true,
@@ -183,7 +142,31 @@ export async function GET(req: NextRequest) {
       })
     : [];
 
+  const rows: CastCsvRow[] = [];
   for (const period of periods) {
+    const summaries = new Map<string, CastCsvSummary>();
+    const ensureSummary = (
+      castId: string,
+      name: string,
+      storeName: string | null,
+    ) => {
+      const existing = summaries.get(castId);
+      if (existing) return existing;
+      const summary: CastCsvSummary = {
+        castId,
+        name,
+        storeName,
+        slotCount: 0,
+        dayKeys: new Set<string>(),
+      };
+      summaries.set(castId, summary);
+      return summary;
+    };
+
+    for (const cast of castsByStoreId.get(period.storeId) ?? []) {
+      ensureSummary(cast.id, cast.name, cast.store?.name ?? null);
+    }
+
     for (const day of period.shiftDays) {
       const dayKey = day.date.toISOString().slice(0, 10);
       for (const slot of day.shiftSlots) {
@@ -196,18 +179,48 @@ export async function GET(req: NextRequest) {
         summary.dayKeys.add(dayKey);
       }
     }
+
+    const periodKey: ShiftPeriodKey = {
+      year: period.year,
+      month: period.month,
+      half: period.half as ShiftHalf,
+    };
+    const periodLabel = `${period.year}年${period.month}月${halfLabel(periodKey.half)}`;
+    const periodRows = [...summaries.values()].sort((a, b) => {
+      const hourDiff = b.slotCount - a.slotCount;
+      if (hourDiff !== 0) return hourDiff;
+      const storeCompare = (a.storeName ?? "").localeCompare(b.storeName ?? "", "ja");
+      if (storeCompare !== 0) return storeCompare;
+      return a.name.localeCompare(b.name, "ja");
+    });
+
+    for (const row of periodRows) {
+      rows.push({
+        period: periodKey,
+        periodLabel,
+        shiftStoreName: period.store.name,
+        castName: row.name,
+        workDays: row.dayKeys.size,
+        homeStoreName: row.storeName,
+        totalHours: row.slotCount * 0.5,
+      });
+    }
   }
 
-  const rows = [...summaries.values()].sort((a, b) => {
-    const storeCompare = (a.storeName ?? "").localeCompare(b.storeName ?? "", "ja");
-    if (storeCompare !== 0) return storeCompare;
-    return a.name.localeCompare(b.name, "ja");
+  rows.sort((a, b) => {
+    const periodCompare = periodIndex(a.period) - periodIndex(b.period);
+    if (periodCompare !== 0) return periodCompare;
+    const shiftStoreCompare = a.shiftStoreName.localeCompare(b.shiftStoreName, "ja");
+    if (shiftStoreCompare !== 0) return shiftStoreCompare;
+    const hourDiff = b.totalHours - a.totalHours;
+    if (hourDiff !== 0) return hourDiff;
+    return a.castName.localeCompare(b.castName, "ja");
   });
+
   const csv = buildCsv(rows);
-  const periodLabel = displayPeriods
-    .map((period) => `${period.year}年${period.month}月${halfLabel(period.half)}`)
-    .join("_");
-  const filename = `全店舗_キャスト総労働時間_${periodLabel}.csv`;
+  const filename = yearFilter && Number.isInteger(yearFilter)
+    ? `全店舗_キャスト総労働時間_半月別_${yearFilter}年.csv`
+    : "全店舗_キャスト総労働時間_半月別.csv";
 
   return new Response(csv, {
     headers: {
