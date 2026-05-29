@@ -212,6 +212,7 @@ export default async function ConfirmedPage({
           allCasts={allCasts.map((c) => ({ id: c.id, name: c.name, store: c.store }))}
           helpSlotsByDay={JSON.parse(JSON.stringify(Object.fromEntries(helpSlotsByDay)))}
           storeName={period.store.name}
+          showCastSelector={role !== "cast"}
           shiftRequests={shiftRequestsForHide.map((r) => ({
             castId: r.castId,
             endTime: r.endTime,

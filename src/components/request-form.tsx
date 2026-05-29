@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
-import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
+import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek, toUtcDateKey } from "@/lib/shift-utils";
 
 type Day = { id: string; date: string; dayOfWeek: string };
 type Cast = { id: string; name: string; storeName: string | null };
+type Entry = { checked: boolean; start: string; end: string; notes: string };
 type Request = {
   id: string;
   periodId: string;
@@ -35,15 +36,29 @@ type Props = {
   userId: string;
 };
 
-function sameCalendarDay(a: string, b: string) {
-  return new Date(a).toDateString() === new Date(b).toDateString();
+function localDateKey(value: string) {
+  const d = new Date(value);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function createDefaultEntries(dayList: Day[]): Record<string, Entry> {
+  const init: Record<string, Entry> = {};
+  dayList.forEach((d) => {
+    init[d.date] = { checked: false, start: "20", end: "25", notes: "" };
+  });
+  return init;
 }
 
 function findDayDateKeyForRequest(rDate: string, dayList: Day[]): string | null {
-  for (const d of dayList) {
-    if (sameCalendarDay(d.date, rDate)) return d.date;
-  }
-  return null;
+  const utcKey = toUtcDateKey(rDate);
+  const utcMatch = dayList.find((d) => toUtcDateKey(d.date) === utcKey);
+  if (utcMatch) return utcMatch.date;
+
+  const localKey = localDateKey(rDate);
+  return dayList.find((d) => localDateKey(d.date) === localKey)?.date ?? null;
 }
 
 async function errorMessageFromResponse(res: Response): Promise<string> {
@@ -70,13 +85,7 @@ export function RequestForm({
   const [addModal, setAddModal] = useState(false);
   const [editingRequest, setEditingRequest] = useState<Request | null>(null);
   const [selectedCast, setSelectedCast] = useState("");
-  const defaultEntries = useMemo(() => {
-    const init: Record<string, { checked: boolean; start: string; end: string; notes: string }> = {};
-    days.forEach((d) => {
-      init[d.date] = { checked: false, start: "20", end: "25", notes: "" };
-    });
-    return init;
-  }, [days]);
+  const defaultEntries = useMemo(() => createDefaultEntries(days), [days]);
 
   const [entries, setEntries] = useState(defaultEntries);
   const [saving, setSaving] = useState(false);
@@ -102,7 +111,7 @@ export function RequestForm({
   const openAddModal = () => {
     setEditingRequest(null);
     setSelectedCast("");
-    setEntries({ ...defaultEntries });
+    setEntries(createDefaultEntries(days));
     setAddModal(true);
   };
 
@@ -111,12 +120,12 @@ export function RequestForm({
     if (lockedFor(r.periodId)) return;
     if (!canEditStaff && r.castId !== userId) return;
     const key = findDayDateKeyForRequest(r.date, days);
-    if (!key) return;
-    const next = { ...defaultEntries };
+    if (!key) {
+      toast.error("編集する日付がこの期間内に見つかりませんでした");
+      return;
+    }
+    const next = createDefaultEntries(days);
     const rawNotes = r.notesRaw ?? r.notes ?? "";
-    Object.keys(next).forEach((k) => {
-      next[k] = { ...next[k], checked: false };
-    });
     next[key] = {
       checked: true,
       start: String(r.startTime),
@@ -136,7 +145,10 @@ export function RequestForm({
 
     if (editingRequest) {
       const picked = Object.entries(entries).filter(([, v]) => v.checked);
-      if (picked.length !== 1) return;
+      if (picked.length !== 1) {
+        toast.error("編集する日付を1つ選択してください");
+        return;
+      }
       const [dateKey, v] = picked[0];
       setSaving(true);
       try {
@@ -158,6 +170,8 @@ export function RequestForm({
         }
         closeModal();
         reload();
+      } catch {
+        toast.error("保存に失敗しました。通信状況を確認してもう一度お試しください");
       } finally {
         setSaving(false);
       }
@@ -202,6 +216,8 @@ export function RequestForm({
         return n;
       });
       reload();
+    } catch {
+      toast.error("保存に失敗しました。通信状況を確認してもう一度お試しください");
     } finally {
       setSaving(false);
     }
@@ -211,17 +227,21 @@ export function RequestForm({
     const row = requests.find((x) => x.id === id);
     if (row && lockedFor(row.periodId)) return;
     if (!confirm("この希望を削除しますか？")) return;
-    const res = await fetch("/api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", id }),
-    });
-    if (!res.ok) {
-      toast.error(await errorMessageFromResponse(res));
-      return;
+    try {
+      const res = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      });
+      if (!res.ok) {
+        toast.error(await errorMessageFromResponse(res));
+        return;
+      }
+      closeModal();
+      reload();
+    } catch {
+      toast.error("削除に失敗しました。通信状況を確認してもう一度お試しください");
     }
-    closeModal();
-    reload();
   };
 
   const handleModalDelete = () => {

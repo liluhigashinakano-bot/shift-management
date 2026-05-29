@@ -61,6 +61,7 @@ type Props = {
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   helpSlotsByDay?: Record<string, HelpSlot[]>;
   storeName?: string;
+  showCastSelector?: boolean;
   /** 退勤29:00希望時に退勤列の名前を隠す判定用 */
   shiftRequests?: { castId: string; endTime: number; date: string }[];
 };
@@ -127,11 +128,13 @@ export function ConfirmedShift({
   allCasts,
   helpSlotsByDay,
   storeName,
+  showCastSelector = true,
   shiftRequests = [],
 }: Props) {
   const [selectedCast, setSelectedCast] = useState("");
   const [showSendList, setShowSendList] = useState(false);
   const data = initialData;
+  const canSelectCast = showCastSelector && assignedCasts.length > 1;
 
   // ヘルプスロットをマージ（他店の同一半日スロットと同じ刻の自店スロットだけ隠す。前後の自店帯は残す）
   const mergedDays = useMemo(() => {
@@ -169,47 +172,48 @@ export function ConfirmedShift({
 
   // 選択キャストでフィルタ
   const filteredDays = useMemo(() => {
-    if (!selectedCast) return mergedDays;
+    if (!canSelectCast || !selectedCast) return mergedDays;
     return mergedDays.map((day) => ({
       ...day,
       shiftSlots: day.shiftSlots.filter((s) => s.castId === selectedCast),
     }));
-  }, [mergedDays, selectedCast]);
+  }, [canSelectCast, mergedDays, selectedCast]);
 
   const mid = Math.min(8, filteredDays.length);
   const weeks = [filteredDays.slice(0, mid), filteredDays.slice(mid)];
 
   return (
     <div className="space-y-4">
-      {/* キャスト選択 */}
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <label className="shrink-0 whitespace-nowrap text-[10px] font-bold text-purple-700 sm:text-sm">
-            キャスト選択:
-          </label>
-          <select
-            className="min-h-9 min-w-0 flex-1 border border-gray-300 rounded-md bg-white px-2 py-1.5 text-[11px] sm:min-w-[200px] sm:flex-none sm:px-3 sm:py-2 sm:text-sm"
-            value={selectedCast}
-            onChange={(e) => setSelectedCast(e.target.value)}
-          >
-            <option value="">全キャスト表示</option>
-            {assignedCasts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+      {canSelectCast && (
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <label className="shrink-0 whitespace-nowrap text-[10px] font-bold text-purple-700 sm:text-sm">
+              キャスト選択:
+            </label>
+            <select
+              className="min-h-9 min-w-0 flex-1 border border-gray-300 rounded-md bg-white px-2 py-1.5 text-[11px] sm:min-w-[200px] sm:flex-none sm:px-3 sm:py-2 sm:text-sm"
+              value={selectedCast}
+              onChange={(e) => setSelectedCast(e.target.value)}
+            >
+              <option value="">全キャスト表示</option>
+              {assignedCasts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedCast && (
+            <button
+              type="button"
+              className="inline-flex min-h-9 shrink-0 items-center justify-center self-start rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:self-center sm:text-xs whitespace-nowrap"
+              onClick={() => setShowSendList(true)}
+            >
+              送付用テキスト化
+            </button>
+          )}
         </div>
-        {selectedCast && (
-          <button
-            type="button"
-            className="inline-flex min-h-9 shrink-0 items-center justify-center self-start rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:self-center sm:text-xs whitespace-nowrap"
-            onClick={() => setShowSendList(true)}
-          >
-            送付用テキスト化
-          </button>
-        )}
-      </div>
+      )}
 
       {/* シフト表 */}
       {weeks.map((week, weekIdx) => {
@@ -317,7 +321,7 @@ export function ConfirmedShift({
                                 }}
                               >
                                 {startCasts.map((s) => {
-                                  const helpStore = (s as any)._helpStore;
+                                  const helpStore = s._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
                                   const short = castSuffixForShiftBadge(s.cast);
                                   const displayName = helpStore
@@ -374,7 +378,7 @@ export function ConfirmedShift({
                                       hideEndCastNameForWishEnd29(r.endTime, slot),
                                   );
                                   if (reqHide) return null;
-                                  const helpStore = (s as any)._helpStore;
+                                  const helpStore = s._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
                                   const short = castSuffixForShiftBadge(s.cast);
                                   const displayName = helpStore

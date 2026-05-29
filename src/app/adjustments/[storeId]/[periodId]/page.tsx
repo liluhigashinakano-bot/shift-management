@@ -300,6 +300,7 @@ export default async function AdjustmentsPage({
             storeName: c.store?.name ?? null,
           }))}
           showConfirmedShiftColumn={Boolean(period.adjustmentConfirmedPublished)}
+          showCastSelector={role !== "cast"}
         />
       </main>
     </div>
