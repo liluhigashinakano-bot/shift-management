@@ -106,6 +106,7 @@ function countStyle(count: number): React.CSSProperties {
 
 /** 46px 出勤・退勤列の内側幅（div の横パディング除く） */
 const CLOCK_COL_INNER_PX = 42;
+const NAME_TAG_GRID_GAP_PX = 1;
 
 /**
  * タグ1つに割り当てられた幅（px）と表示文字列からフォントサイズを決める（キャスト名ごと）
@@ -119,6 +120,38 @@ function castNameTagFontSizePx(displayName: string, widthBudgetPx: number): numb
   const textWidth = Math.max(8, widthBudgetPx - spanPad);
   const raw = Math.floor((textWidth / chars) * 1.22);
   return Math.max(4, Math.min(10, raw));
+}
+
+function isHalfWidthCastNameTag(displayName: string): boolean {
+  const chars = Array.from(displayName).length;
+  return chars >= 2 && chars <= 3;
+}
+
+function castNameTagWidthBudgetPx(displayName: string, tagCount: number): number {
+  if (isHalfWidthCastNameTag(displayName)) {
+    return (CLOCK_COL_INNER_PX - NAME_TAG_GRID_GAP_PX) / 2;
+  }
+  return tagCount > 1 ? CLOCK_COL_INNER_PX - 2 : CLOCK_COL_INNER_PX;
+}
+
+const castNameTagCellStyle: React.CSSProperties = {
+  height: "28px",
+  overflow: "hidden",
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gridAutoRows: "minmax(0, 1fr)",
+  alignItems: "center",
+  justifyItems: "stretch",
+  alignContent: "center",
+  gap: NAME_TAG_GRID_GAP_PX,
+  padding: "0 2px",
+};
+
+function castNameTagGridItemStyle(displayName: string): React.CSSProperties {
+  return {
+    gridColumn: isHalfWidthCastNameTag(displayName) ? undefined : "1 / -1",
+    minWidth: 0,
+  };
 }
 
 export function ConfirmedShift({
@@ -286,16 +319,7 @@ export function ConfirmedShift({
                         const isLast = dayIdx === week.length - 1;
                         const hasWorking = count > 0;
                         const nStart = startCasts.length;
-                        const stackStartTags = nStart > 1;
-                        const startTagWidthBudget = stackStartTags
-                          ? CLOCK_COL_INNER_PX - 2
-                          : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nStart - 1)) / Math.max(1, nStart);
-
                         const nEnd = endCasts.length;
-                        const stackEndTags = nEnd > 1;
-                        const endTagWidthBudget = stackEndTags
-                          ? CLOCK_COL_INNER_PX - 2
-                          : (CLOCK_COL_INNER_PX - 2 * Math.max(0, nEnd - 1)) / Math.max(1, nEnd);
 
                         return (
                           <React.Fragment key={day.id}>
@@ -303,19 +327,7 @@ export function ConfirmedShift({
                               style={{ boxShadow: "inset 1px 0 0 #9ca3af" }}
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
-                              <div
-                                style={{
-                                  height: "28px",
-                                  overflow: "hidden",
-                                  display: "flex",
-                                  flexDirection: stackStartTags ? "column" : "row",
-                                  flexWrap: stackStartTags ? "nowrap" : "wrap",
-                                  alignItems: stackStartTags ? "stretch" : "center",
-                                  justifyContent: stackStartTags ? "center" : undefined,
-                                  gap: stackStartTags ? 1 : undefined,
-                                  padding: "0 2px",
-                                }}
-                              >
+                              <div style={castNameTagCellStyle}>
                                 {startCasts.map((s) => {
                                   const helpStore = (s as any)._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
@@ -326,7 +338,10 @@ export function ConfirmedShift({
                                       ? `${castInfo!.store!.name}${short}`
                                       : short;
                                   const nameLen = Array.from(displayName).length;
-                                  const nameFontSize = castNameTagFontSizePx(displayName, startTagWidthBudget);
+                                  const nameFontSize = castNameTagFontSizePx(
+                                    displayName,
+                                    castNameTagWidthBudgetPx(displayName, nStart),
+                                  );
                                   const tagBg = helpStore ? "#fef3c7" : "#fbcfe8"; // ヘルプ先は黄色系
                                   const tagColor = helpStore ? "#92400e" : "#9d174d";
                                   return (
@@ -335,11 +350,12 @@ export function ConfirmedShift({
                                       style={{
                                         backgroundColor: tagBg,
                                         color: tagColor,
+                                        ...castNameTagGridItemStyle(displayName),
                                         fontSize: `${nameFontSize}px`,
                                         lineHeight: 1.1,
-                                        letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
+                                        letterSpacing: 0,
                                       }}
-                                      className={`${stackStartTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 font-medium whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
+                                      className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 font-medium whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                     >
                                       {displayName}
                                     </span>
@@ -351,19 +367,7 @@ export function ConfirmedShift({
                               style={{ boxShadow: "inset 1px 0 0 #d1d5db" }}
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
-                              <div
-                                style={{
-                                  height: "28px",
-                                  overflow: "hidden",
-                                  display: "flex",
-                                  flexDirection: stackEndTags ? "column" : "row",
-                                  flexWrap: stackEndTags ? "nowrap" : "wrap",
-                                  alignItems: stackEndTags ? "stretch" : "center",
-                                  justifyContent: stackEndTags ? "center" : undefined,
-                                  gap: stackEndTags ? 1 : undefined,
-                                  padding: "0 2px",
-                                }}
-                              >
+                              <div style={castNameTagCellStyle}>
                                 {endCasts.map((s) => {
                                   // この行（slot）が当該キャストの実退勤時刻。希望29:00 かつ 実退勤も29:00（=slot）のときのみ非表示。
                                   const reqHide = shiftRequests.find(
@@ -383,18 +387,22 @@ export function ConfirmedShift({
                                       ? `${castInfo!.store!.name}${short}`
                                       : short;
                                   const nameLen = Array.from(displayName).length;
-                                  const nameFontSize = castNameTagFontSizePx(displayName, endTagWidthBudget);
+                                  const nameFontSize = castNameTagFontSizePx(
+                                    displayName,
+                                    castNameTagWidthBudgetPx(displayName, nEnd),
+                                  );
                                   return (
                                     <span
                                       key={s.castId + (helpStore || "")}
                                       style={{
                                         backgroundColor: "#e5e7eb",
                                         color: "#4b5563",
+                                        ...castNameTagGridItemStyle(displayName),
                                         fontSize: `${nameFontSize}px`,
                                         lineHeight: 1.1,
-                                        letterSpacing: nameLen > 7 ? "-0.03em" : nameLen > 5 ? "-0.015em" : undefined,
+                                        letterSpacing: 0,
                                       }}
-                                      className={`${stackEndTags ? "inline-flex w-full min-h-0 flex-[1_1_0] max-w-full items-center justify-center" : "inline-block mr-0.5"} rounded py-0 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
+                                      className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                     >
                                       {displayName}
                                     </span>
