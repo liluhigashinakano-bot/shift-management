@@ -214,6 +214,41 @@ function isHalfWidthCastNameTag(displayName: string): boolean {
   return chars >= 2 && chars <= 3;
 }
 
+function pairShortCastNameTagsForDisplay<T>(
+  items: readonly T[],
+  displayNameFor: (item: T) => string,
+): T[] {
+  const entries = items.map((item) => ({
+    item,
+    displayName: displayNameFor(item),
+  }));
+  const used = new Set<number>();
+  const ordered: T[] = [];
+
+  for (let i = 0; i < entries.length; i++) {
+    if (used.has(i)) continue;
+
+    const entry = entries[i];
+    ordered.push(entry.item);
+    used.add(i);
+
+    if (!isHalfWidthCastNameTag(entry.displayName)) continue;
+
+    const pairIndex = entries.findIndex(
+      (next, index) =>
+        index > i &&
+        !used.has(index) &&
+        isHalfWidthCastNameTag(next.displayName),
+    );
+    if (pairIndex >= 0) {
+      ordered.push(entries[pairIndex].item);
+      used.add(pairIndex);
+    }
+  }
+
+  return ordered;
+}
+
 function castNameTagWidthBudgetPx(displayName: string, tagCount: number): number {
   if (isHalfWidthCastNameTag(displayName)) {
     return (CLOCK_COL_INNER_PX - NAME_TAG_GRID_GAP_PX) / 2;
@@ -877,8 +912,30 @@ export function ShiftGrid({
                       // ドロップ判定用: ドラッグ中の同じ日かどうか
                       const isDragTarget = dragging && dragging.dayId === day.id;
 
-                      const nStart = startCasts.length;
-                      const nEnd = endCasts.length;
+                      const orderedStartCasts = pairShortCastNameTagsForDisplay(
+                        startCasts,
+                        (s) => {
+                          const castInfo = allCasts.find((c) => c.id === s.castId);
+                          return shiftTagDisplayName(s.cast, castInfo, data.store.name);
+                        },
+                      );
+                      const visibleEndCasts = endCasts.filter((s) => {
+                        const castSlots = day.shiftSlots.filter((sl) => sl.castId === s.castId).sort((a, b) => a.timeSlot - b.timeSlot);
+                        const origEnd = (castSlots[castSlots.length - 1]?.timeSlot ?? slot) + 0.5;
+                        const req = data.shiftRequests?.find(
+                          (r) => r.castId === s.castId && r.dayId === day.id
+                        );
+                        return !(req && hideEndCastNameForWishEnd29(req.endTime, origEnd));
+                      });
+                      const orderedEndCasts = pairShortCastNameTagsForDisplay(
+                        visibleEndCasts,
+                        (s) => {
+                          const endCastInfo = allCasts.find((c) => c.id === s.castId);
+                          return shiftTagDisplayName(s.cast, endCastInfo, data.store.name);
+                        },
+                      );
+                      const nStart = orderedStartCasts.length;
+                      const nEnd = orderedEndCasts.length;
 
                       return (
                         <React.Fragment key={day.id}>
@@ -890,7 +947,7 @@ export function ShiftGrid({
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
                             <div style={castNameTagCellStyle}>
-                            {startCasts.map((s) => {
+                            {orderedStartCasts.map((s) => {
                               const castInfo = allCasts.find((c) => c.id === s.castId);
                               const displayName = shiftTagDisplayName(s.cast, castInfo, data.store.name);
                               const nameLen = Array.from(displayName).length;
@@ -978,7 +1035,7 @@ export function ShiftGrid({
                             onDrop={(e) => handleDrop(e, day.id, slot)}
                           >
                             <div style={castNameTagCellStyle}>
-                            {endCasts.map((s) => {
+                            {orderedEndCasts.map((s) => {
                               const endCastInfo = allCasts.find((c) => c.id === s.castId);
                               const endDisplayName = shiftTagDisplayName(s.cast, endCastInfo, data.store.name);
                               const endNameLen = Array.from(endDisplayName).length;

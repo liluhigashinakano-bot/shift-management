@@ -128,6 +128,41 @@ function isHalfWidthCastNameTag(displayName: string): boolean {
   return chars >= 2 && chars <= 3;
 }
 
+function pairShortCastNameTagsForDisplay<T>(
+  items: readonly T[],
+  displayNameFor: (item: T) => string,
+): T[] {
+  const entries = items.map((item) => ({
+    item,
+    displayName: displayNameFor(item),
+  }));
+  const used = new Set<number>();
+  const ordered: T[] = [];
+
+  for (let i = 0; i < entries.length; i++) {
+    if (used.has(i)) continue;
+
+    const entry = entries[i];
+    ordered.push(entry.item);
+    used.add(i);
+
+    if (!isHalfWidthCastNameTag(entry.displayName)) continue;
+
+    const pairIndex = entries.findIndex(
+      (next, index) =>
+        index > i &&
+        !used.has(index) &&
+        isHalfWidthCastNameTag(next.displayName),
+    );
+    if (pairIndex >= 0) {
+      ordered.push(entries[pairIndex].item);
+      used.add(pairIndex);
+    }
+  }
+
+  return ordered;
+}
+
 function castNameTagWidthBudgetPx(displayName: string, tagCount: number): number {
   if (isHalfWidthCastNameTag(displayName)) {
     return (CLOCK_COL_INNER_PX - NAME_TAG_GRID_GAP_PX) / 2;
@@ -322,8 +357,36 @@ export function ConfirmedShift({
                         const count = daySlots.length;
                         const isLast = dayIdx === week.length - 1;
                         const hasWorking = count > 0;
-                        const nStart = startCasts.length;
-                        const nEnd = endCasts.length;
+                        const displayNameFor = (s: ShiftSlot) => {
+                          const helpStore = s._helpStore;
+                          const castInfo = allCasts.find((c) => c.id === s.castId);
+                          const short = castSuffixForShiftBadge(s.cast);
+                          return helpStore
+                            ? `→${helpStore} ${short}`
+                            : (castInfo?.store?.name && castInfo.store.name !== data.store.name)
+                              ? `${castInfo!.store!.name}${short}`
+                              : short;
+                        };
+                        const orderedStartCasts = pairShortCastNameTagsForDisplay(
+                          startCasts,
+                          displayNameFor,
+                        );
+                        const visibleEndCasts = endCasts.filter((s) => {
+                          const reqHide = shiftRequests.find(
+                            (r) =>
+                              r.castId === s.castId &&
+                              new Date(r.date).toISOString().slice(0, 10) ===
+                                new Date(day.date).toISOString().slice(0, 10) &&
+                              hideEndCastNameForWishEnd29(r.endTime, slot),
+                          );
+                          return !reqHide;
+                        });
+                        const orderedEndCasts = pairShortCastNameTagsForDisplay(
+                          visibleEndCasts,
+                          displayNameFor,
+                        );
+                        const nStart = orderedStartCasts.length;
+                        const nEnd = orderedEndCasts.length;
 
                         return (
                           <React.Fragment key={day.id}>
@@ -332,7 +395,7 @@ export function ConfirmedShift({
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
                               <div style={castNameTagCellStyle}>
-                                {startCasts.map((s) => {
+                                {orderedStartCasts.map((s) => {
                                   const helpStore = s._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
                                   const short = castSuffixForShiftBadge(s.cast);
@@ -372,7 +435,7 @@ export function ConfirmedShift({
                               className={`${hourBorder} px-0 py-0 text-[10px] ${hasWorking ? "bg-amber-50/40" : ""}`}
                             >
                               <div style={castNameTagCellStyle}>
-                                {endCasts.map((s) => {
+                                {orderedEndCasts.map((s) => {
                                   // この行（slot）が当該キャストの実退勤時刻。希望29:00 かつ 実退勤も29:00（=slot）のときのみ非表示。
                                   const reqHide = shiftRequests.find(
                                     (r) =>
