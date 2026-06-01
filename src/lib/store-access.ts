@@ -13,6 +13,7 @@ export type SessionUserLike = {
 export function getAccessibleStoreIds(user: SessionUserLike): string[] | null {
   const role = user.role;
   if (role === "admin") return null;
+  if (role === "viewer") return null;
   if (role === "cast") return user.storeId ? [user.storeId] : [];
   if (user.accessAllStores) return null;
   const assigned = user.assignedStoreIds?.filter(Boolean) ?? [];
