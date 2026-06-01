@@ -6,7 +6,7 @@ import { NavHeader } from "@/components/nav-header";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getAccessibleStoreIds } from "@/lib/store-access";
+import { canEditStore, getAccessibleStoreIds } from "@/lib/store-access";
 import { Download } from "lucide-react";
 
 // クエリ（searchParams）の変更（例: ?year=...&start=...）を必ず反映する
@@ -116,6 +116,7 @@ export default async function DashboardPage({
 
   // 表示対象の店舗×期間は未作成なら自動で作成（手動「＋作成」不要）
   for (const store of stores) {
+    if (!canEditStore(session.user as any, store.id)) continue;
     for (const p of effectiveDisplayPeriods) {
       await ensureShiftPeriod(store.id, p.year, p.month, p.half);
     }
