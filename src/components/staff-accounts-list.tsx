@@ -50,10 +50,12 @@ export function StaffAccountsList({
   stores,
   refreshKey,
   currentUserId,
+  readOnly = false,
 }: {
   stores: Store[];
   refreshKey: number;
   currentUserId: string;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<StaffRow[]>([]);
@@ -100,6 +102,7 @@ export function StaffAccountsList({
   }, [load, refreshKey]);
 
   const openEdit = (u: StaffRow) => {
+    if (readOnly) return;
     setEditing(u);
     setName(u.name);
     setRole(u.role as RoleChoice);
@@ -319,7 +322,9 @@ export function StaffAccountsList({
                 rows.map((u) => (
                   <tr
                     key={u.id}
-                    className="cursor-pointer hover:bg-purple-50/60 border-b border-gray-100 last:border-0"
+                    className={`border-b border-gray-100 last:border-0 ${
+                      readOnly ? "" : "cursor-pointer hover:bg-purple-50/60"
+                    }`}
                     onClick={() => openEdit(u)}
                   >
                     <td className="px-3 py-2 font-medium">{u.name}</td>
@@ -337,7 +342,9 @@ export function StaffAccountsList({
           </table>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">行をクリックすると編集できます。</p>
+      {!readOnly && (
+        <p className="text-xs text-muted-foreground">行をクリックすると編集できます。</p>
+      )}
 
       {editing && (
         <Modal open title={`編集: ${editing.name}`} onClose={closeEdit}>

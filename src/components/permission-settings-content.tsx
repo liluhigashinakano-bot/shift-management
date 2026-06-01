@@ -10,9 +10,11 @@ type Store = { id: string; name: string };
 export function PermissionSettingsContent({
   stores,
   currentUserId,
+  readOnly = false,
 }: {
   stores: Store[];
   currentUserId: string;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [listKey, setListKey] = useState(0);
@@ -27,11 +29,14 @@ export function PermissionSettingsContent({
         stores={stores}
         refreshKey={listKey}
         currentUserId={currentUserId}
+        readOnly={readOnly}
       />
-      <div>
-        <h2 className="text-lg font-semibold mb-3">新規アカウント作成</h2>
-        <PermissionAccountForm stores={stores} onCreated={refresh} />
-      </div>
+      {!readOnly && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">新規アカウント作成</h2>
+          <PermissionAccountForm stores={stores} onCreated={refresh} />
+        </div>
+      )}
     </div>
   );
 }
