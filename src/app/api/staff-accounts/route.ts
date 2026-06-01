@@ -24,7 +24,8 @@ function displayLoginId(
 /** 管理者・従業員・閲覧者の一覧 */
 export async function GET() {
   const session = await auth();
-  if (!session || (session.user as { role?: string }).role !== "admin") {
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  if (!session || (role !== "admin" && role !== "viewer")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

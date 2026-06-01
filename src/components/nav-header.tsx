@@ -27,12 +27,17 @@ const navItems = [
   { href: "/dashboard", label: "ダッシュボード", staffOnly: true },
   { href: "/casts", label: "キャスト管理", staffOnly: true },
   { href: "/stores", label: "店舗管理", staffNotCast: true },
-  { href: "/permissions", label: "権限設定", adminOnly: true },
+  { href: "/permissions", label: "権限設定", adminOrViewerOnly: true },
 ];
 
 function filterNavItems(user: Props["user"]) {
   return navItems.filter((item) => {
-    if (item.adminOnly && user.role !== "admin") return false;
+    if (
+      (item as { adminOrViewerOnly?: boolean }).adminOrViewerOnly &&
+      user.role !== "admin" &&
+      user.role !== "viewer"
+    ) return false;
+    if ((item as { adminOnly?: boolean }).adminOnly && user.role !== "admin") return false;
     if ((item as { staffNotCast?: boolean }).staffNotCast && user.role === "cast")
       return false;
     if ((item as { staffOnly?: boolean }).staffOnly && user.role === "cast")
