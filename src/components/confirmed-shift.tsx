@@ -58,6 +58,7 @@ type HelpSlot = {
 type Props = {
   initialData: Period;
   assignedCasts: { id: string; name: string }[];
+  defaultSelectedCastId?: string;
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   helpSlotsByDay?: Record<string, HelpSlot[]>;
   storeName?: string;
@@ -192,12 +193,13 @@ function castNameTagGridItemStyle(displayName: string): React.CSSProperties {
 export function ConfirmedShift({
   initialData,
   assignedCasts,
+  defaultSelectedCastId,
   allCasts,
   helpSlotsByDay,
   storeName,
   shiftRequests = [],
 }: Props) {
-  const [selectedCast, setSelectedCast] = useState("");
+  const [selectedCast, setSelectedCast] = useState(defaultSelectedCastId ?? "");
   const [showSendList, setShowSendList] = useState(false);
   const data = initialData;
 

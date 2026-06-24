@@ -147,6 +147,10 @@ export default async function ConfirmedPage({
     }
   }
 
+  if (role === "cast" && session.user.name && !castMap.has(userId)) {
+    castMap.set(userId, castSuffixForShiftBadge({ name: session.user.name }));
+  }
+
   const assignedCasts = [...castMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
   const allCasts = await prisma.user.findMany({
@@ -209,6 +213,7 @@ export default async function ConfirmedPage({
         <ConfirmedShift
           initialData={JSON.parse(JSON.stringify(period))}
           assignedCasts={assignedCasts}
+          defaultSelectedCastId={role === "cast" ? userId : undefined}
           allCasts={allCasts.map((c) => ({ id: c.id, name: c.name, store: c.store }))}
           helpSlotsByDay={JSON.parse(JSON.stringify(Object.fromEntries(helpSlotsByDay)))}
           storeName={period.store.name}
