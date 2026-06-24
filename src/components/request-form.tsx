@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
-import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek } from "@/lib/shift-utils";
+import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek, toUtcDateKey } from "@/lib/shift-utils";
 
 type Day = { id: string; date: string; dayOfWeek: string };
 type Cast = { id: string; name: string; storeName: string | null };
@@ -24,6 +24,8 @@ type Request = {
   notesRaw?: string | null;
   cast: { id: string; name: string; store: { name: string } | null };
 };
+
+type Entry = { checked: boolean; start: string; end: string; notes: string };
 
 type Props = {
   periodId: string;
@@ -44,6 +46,19 @@ function findDayDateKeyForRequest(rDate: string, dayList: Day[]): string | null 
     if (sameCalendarDay(d.date, rDate)) return d.date;
   }
   return null;
+}
+
+function requestNotesForForm(r: Request): string {
+  return r.notesRaw ?? r.notes ?? "";
+}
+
+function entryFromRequest(r: Request, checked: boolean): Entry {
+  return {
+    checked,
+    start: String(r.startTime),
+    end: String(r.endTime),
+    notes: requestNotesForForm(r),
+  };
 }
 
 async function errorMessageFromResponse(res: Response): Promise<string> {
@@ -71,7 +86,7 @@ export function RequestForm({
   const [editingRequest, setEditingRequest] = useState<Request | null>(null);
   const [selectedCast, setSelectedCast] = useState("");
   const defaultEntries = useMemo(() => {
-    const init: Record<string, { checked: boolean; start: string; end: string; notes: string }> = {};
+    const init: Record<string, Entry> = {};
     days.forEach((d) => {
       init[d.date] = { checked: false, start: "20", end: "25", notes: "" };
     });
@@ -85,6 +100,21 @@ export function RequestForm({
 
   const lockedFor = (pid: string) => periodLocks[pid] ?? false;
   const currentLocked = lockedFor(periodId);
+  const modalCastId = editingRequest?.castId ?? (canEditStaff ? selectedCast : userId);
+
+  const currentPeriodRequestsByCastDate = useMemo(() => {
+    const map = new Map<string, Request>();
+    requests.forEach((r) => {
+      if (r.periodId !== periodId) return;
+      map.set(`${r.castId}:${toUtcDateKey(r.date)}`, r);
+    });
+    return map;
+  }, [periodId, requests]);
+
+  const existingRequestForDay = (dayDate: string) => {
+    if (!modalCastId) return undefined;
+    return currentPeriodRequestsByCastDate.get(`${modalCastId}:${toUtcDateKey(dayDate)}`);
+  };
 
   useEffect(() => {
     setRequests(initialRequests);
@@ -113,16 +143,10 @@ export function RequestForm({
     const key = findDayDateKeyForRequest(r.date, days);
     if (!key) return;
     const next = { ...defaultEntries };
-    const rawNotes = r.notesRaw ?? r.notes ?? "";
     Object.keys(next).forEach((k) => {
       next[k] = { ...next[k], checked: false };
     });
-    next[key] = {
-      checked: true,
-      start: String(r.startTime),
-      end: String(r.endTime),
-      notes: rawNotes,
-    };
+    next[key] = entryFromRequest(r, true);
     setEntries(next);
     if (canEditStaff) setSelectedCast(r.castId);
     setEditingRequest(r);
@@ -207,7 +231,10 @@ export function RequestForm({
     }
   };
 
-  const deleteRequest = async (id: string) => {
+  const deleteRequest = async (
+    id: string,
+    options: { closeAfterDelete?: boolean; resetDate?: string } = {},
+  ) => {
     const row = requests.find((x) => x.id === id);
     if (row && lockedFor(row.periodId)) return;
     if (!confirm("この希望を削除しますか？")) return;
@@ -220,7 +247,17 @@ export function RequestForm({
       toast.error(await errorMessageFromResponse(res));
       return;
     }
-    closeModal();
+    setRequests((prev) => prev.filter((x) => x.id !== id));
+    if (options.resetDate) {
+      setEntries((prev) => ({
+        ...prev,
+        [options.resetDate!]: {
+          ...(defaultEntries[options.resetDate!] ?? { start: "20", end: "25", notes: "" }),
+          checked: false,
+        },
+      }));
+    }
+    if (options.closeAfterDelete ?? true) closeModal();
     reload();
   };
 
@@ -340,8 +377,22 @@ export function RequestForm({
                       </span>
                     </td>
                     <td className={`${cell} text-gray-500`}>
-                      <div className="max-w-[7rem] overflow-x-auto overflow-y-hidden whitespace-nowrap py-0.5 [scrollbar-width:thin] sm:max-w-[20rem] sm:whitespace-normal sm:overflow-visible">
-                        {r.notes || ""}
+                      <div className="flex min-w-[9rem] items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden whitespace-nowrap py-0.5 [scrollbar-width:thin] sm:max-w-[20rem] sm:whitespace-normal sm:overflow-visible">
+                          {r.notes || ""}
+                        </div>
+                        {clickable && !canEditStaff && (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded border border-red-200 px-2 py-0.5 text-[10px] font-medium text-red-500 hover:bg-red-50 sm:text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteRequest(r.id);
+                            }}
+                          >
+                            削除
+                          </button>
+                        )}
                       </div>
                     </td>
                     {canEditStaff && (
@@ -391,7 +442,10 @@ export function RequestForm({
                 <select
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                   value={selectedCast}
-                  onChange={(e) => setSelectedCast(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCast(e.target.value);
+                    setEntries({ ...defaultEntries });
+                  }}
                   disabled={!!editingRequest}
                 >
                   <option value="">キャストを選択</option>
@@ -417,6 +471,8 @@ export function RequestForm({
                 const dow = getJapaneseDayOfWeek(d);
                 const dateStr = `${d.getMonth() + 1}/${d.getDate()}(${dow})`;
                 const entry = entries[day.date];
+                const existingRequest = existingRequestForDay(day.date);
+                const existingNotes = existingRequest ? requestNotesForForm(existingRequest) : "";
                 const isWeekend = dow === "土" || dow === "日";
 
                 return (
@@ -426,42 +482,61 @@ export function RequestForm({
                       entry?.checked ? "border-pink-300 bg-pink-50" : "border-gray-200"
                     }`}
                   >
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={entry?.checked || false}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          if (editingRequest) {
-                            setEntries((prev) => {
-                              const newEnt = { ...prev };
-                              Object.keys(newEnt).forEach((k) => {
-                                newEnt[k] = { ...newEnt[k], checked: false };
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={entry?.checked || false}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            if (editingRequest) {
+                              setEntries((prev) => {
+                                const newEnt = { ...prev };
+                                Object.keys(newEnt).forEach((k) => {
+                                  newEnt[k] = { ...newEnt[k], checked: false };
+                                });
+                                if (checked) {
+                                  newEnt[day.date] = {
+                                    ...prev[day.date],
+                                    checked: true,
+                                  };
+                                } else {
+                                  newEnt[day.date] = { ...prev[day.date], checked: false };
+                                }
+                                return newEnt;
                               });
-                              if (checked) {
-                                newEnt[day.date] = {
-                                  ...prev[day.date],
-                                  checked: true,
-                                };
-                              } else {
-                                newEnt[day.date] = { ...prev[day.date], checked: false };
-                              }
-                              return newEnt;
-                            });
-                            return;
-                          }
-                          setEntries((prev) => ({
-                            ...prev,
-                            [day.date]: { ...prev[day.date], checked },
-                          }));
-                        }}
-                        className="accent-pink-600"
-                        disabled={modalLocked}
-                      />
-                      <span className={`font-medium ${isWeekend ? "text-red-500" : ""}`}>
-                        {dateStr}
-                      </span>
-                    </label>
+                              return;
+                            }
+                            setEntries((prev) => ({
+                              ...prev,
+                              [day.date]: checked && existingRequest
+                                ? entryFromRequest(existingRequest, true)
+                                : { ...prev[day.date], checked },
+                            }));
+                          }}
+                          className="accent-pink-600"
+                          disabled={modalLocked}
+                        />
+                        <span className={`font-medium ${isWeekend ? "text-red-500" : ""}`}>
+                          {dateStr}
+                        </span>
+                      </label>
+                      {existingRequest && !entry?.checked && (
+                        <div className="ml-6 flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-gray-500 sm:ml-auto">
+                          <span className="shrink-0 rounded-full bg-pink-100 px-2 py-0.5 font-medium text-pink-700">
+                            登録済み
+                          </span>
+                          <span className="shrink-0 font-medium text-gray-700">
+                            {formatTimeSlot(existingRequest.startTime)}〜{formatTimeSlot(existingRequest.endTime)}
+                          </span>
+                          {existingNotes && (
+                            <span className="min-w-0 max-w-[10rem] truncate text-gray-400">
+                              {existingNotes}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {entry?.checked && (
                       <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
                         <select
@@ -500,7 +575,7 @@ export function RequestForm({
                           ))}
                         </select>
                         <Input
-                          className="w-24 h-7 text-xs"
+                          className="h-7 w-28 text-xs sm:w-36"
                           placeholder="備考"
                           value={entry.notes}
                           onChange={(e) =>
@@ -511,6 +586,21 @@ export function RequestForm({
                           }
                           disabled={modalLocked}
                         />
+                        {existingRequest && (
+                          <button
+                            type="button"
+                            className="h-7 rounded border border-red-200 px-2 text-xs font-medium text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                            disabled={saving || modalLocked}
+                            onClick={() =>
+                              void deleteRequest(existingRequest.id, {
+                                closeAfterDelete: false,
+                                resetDate: day.date,
+                              })
+                            }
+                          >
+                            削除
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
