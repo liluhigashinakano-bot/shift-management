@@ -195,6 +195,7 @@ export async function GET(req: NextRequest) {
     });
 
     for (const row of periodRows) {
+      if (row.slotCount <= 0) continue;
       rows.push({
         period: periodKey,
         periodLabel,
