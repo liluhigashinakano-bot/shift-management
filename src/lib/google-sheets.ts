@@ -73,6 +73,36 @@ export async function writeCell(
   await writeSheet(sheetName, cell, [[value]]);
 }
 
+/**
+ * 複数のセルを 1 回の通信で書き込む。
+ *
+ * 1 セルずつ送ると 1 期間で約 1,000 回になり、
+ * Google の上限（1 分あたり 60 回）に当たって途中で止まる。
+ */
+export async function writeCells(
+  sheetName: string,
+  updates: { cell: string; value: string | number | null }[],
+): Promise<void> {
+  if (updates.length === 0) return;
+  const sheets = getClient();
+  const spreadsheetId = getSpreadsheetId();
+
+  const CHUNK = 200;
+  for (let i = 0; i < updates.length; i += CHUNK) {
+    const chunk = updates.slice(i, i + CHUNK);
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "RAW",
+        data: chunk.map((u) => ({
+          range: `'${sheetName}'!${u.cell}`,
+          values: [[u.value]],
+        })),
+      },
+    });
+  }
+}
+
 // シート一覧を取得
 export async function listSheets(): Promise<string[]> {
   const sheets = getClient();

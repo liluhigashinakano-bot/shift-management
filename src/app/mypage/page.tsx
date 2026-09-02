@@ -2,107 +2,60 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { NavHeader } from "@/components/nav-header";
-import { MypageForm } from "@/components/mypage-form";
+import { ensureShiftPeriod } from "@/lib/ensure-shift-period";
+import { periodFromNow } from "@/lib/period-utils";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * キャストの入口。希望一覧（/requests）へ送るだけの画面。
+ *
+ * 管理者・従業員がここを開くと、以前は自分をキャストとして希望を出す画面が出ていた。
+ * リンクは無いが住所を直接打てば開けたので、ダッシュボードへ送る。
+ */
 export default async function MypagePage() {
   const session = await auth();
   if (!session) redirect("/login");
-  const role = (session.user as any).role as string | undefined;
+
+  if (session.user.role !== "cast") {
+    redirect("/dashboard");
+  }
 
   const userId = session.user.id;
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { store: true },
+    select: { id: true, name: true, storeId: true },
   });
 
   if (!user) redirect("/login");
 
-  // キャストは「希望一覧（/requests）」へ統一して編集箇所を1つにする
-  if (role === "cast") {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const half = now.getDate() <= 15 ? "first" : "second";
-    const period = await prisma.shiftPeriod.findFirst({
-      where: { storeId: user.storeId ?? undefined, year, month, half },
-      select: { id: true, storeId: true },
-    });
-    if (period?.storeId) redirect(`/requests/${period.storeId}/${period.id}`);
-
-    // 今期が未登録なら、同店舗で最新の期間へ（新規店舗・未作成でもログインへ戻さない）
-    const latest = await prisma.shiftPeriod.findFirst({
-      where: { storeId: user.storeId ?? undefined },
-      orderBy: [{ year: "desc" }, { month: "desc" }, { half: "desc" }],
-      select: { id: true, storeId: true },
-    });
-    if (latest?.storeId) redirect(`/requests/${latest.storeId}/${latest.id}`);
-
-    return (
-      <div className="min-h-dvh">
-        <NavHeader
-          user={{
-            name: session.user.name,
-            role: (session.user as any).role,
-            storeName: (session.user as any).storeName,
-          }}
-        />
-        <main className="max-w-[600px] mx-auto w-full min-w-0 px-3 sm:px-4 py-8">
-          <h1 className="text-xl font-bold mb-2">マイページ</h1>
-          <p className="text-sm text-gray-600">
-            シフト期間がまだ登録されていません。管理者が期間を作成すると、ここから希望シフトに進めます。
-          </p>
-        </main>
-      </div>
+  if (user.storeId) {
+    const current = periodFromNow();
+    // 管理者がダッシュボードを開くまで期間が作られず、
+    // キャストが希望を出せない時間帯があった。ここでも作る。
+    const period = await ensureShiftPeriod(
+      user.storeId,
+      current.year,
+      current.month,
+      current.half,
     );
+    redirect(`/requests/${user.storeId}/${period.id}`);
   }
-
-  // ユーザーが所属する店舗のシフト期間を取得
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-
-  // 全店舗のシフト期間（キャストは他店ヘルプもあるため）
-  const periods = await prisma.shiftPeriod.findMany({
-    where: { year, month },
-    include: {
-      store: true,
-      shiftDays: { orderBy: { date: "asc" }, select: { id: true, date: true, dayOfWeek: true } },
-    },
-    orderBy: [{ store: { name: "asc" } }, { half: "asc" }],
-  });
-
-  // このキャストのシフト希望
-  const myRequests = await prisma.shiftRequest.findMany({
-    where: { castId: userId },
-    include: {
-      period: { include: { store: { select: { name: true } } } },
-    },
-    orderBy: [{ date: "asc" }],
-  });
 
   return (
     <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
-      <main className="max-w-[1200px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <h1 className="text-xl font-bold mb-2">
-          マイページ - {user.name}
-        </h1>
-        <p className="text-sm text-gray-500 mb-4">
-          所属: {user.store?.name || "未所属"} / {user.email}
+      <main className="max-w-[600px] mx-auto w-full min-w-0 px-3 sm:px-4 py-8">
+        <h1 className="text-xl font-bold mb-2">マイページ</h1>
+        <p className="text-sm text-gray-600">
+          所属店舗がまだ設定されていません。店舗の担当者にお知らせください。
         </p>
-        <MypageForm
-          userId={userId}
-          userName={user.name}
-          storeName={user.store?.name || null}
-          periods={JSON.parse(JSON.stringify(periods))}
-          initialRequests={JSON.parse(JSON.stringify(myRequests))}
-        />
       </main>
     </div>
   );

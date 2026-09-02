@@ -20,7 +20,7 @@ export default async function ShiftPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
-  const role = (session.user as any).role as string | undefined;
+  const role = session.user.role;
   if (role === "cast") redirect("/mypage");
 
   const { storeId, periodId } = await params;
@@ -43,7 +43,7 @@ export default async function ShiftPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
-  assertStorePageAccess(session.user as any, storeId);
+  assertStorePageAccess(session.user, storeId);
 
   const allCasts = await prisma.user.findMany({
     where: { role: "cast", isTrialGuest: false },
@@ -130,7 +130,7 @@ export default async function ShiftPage({
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
 
-  const accessible = getAccessibleStoreIds(session.user as any);
+  const accessible = getAccessibleStoreIds(session.user);
   let storeOptions: { id: string; name: string; periodId: string | null }[];
   if (accessible === null) {
     const stores = await prisma.store.findMany({
@@ -183,7 +183,11 @@ export default async function ShiftPage({
     ];
   }
 
-  const canEditCurrentStore = canEditStore(session.user as any, storeId);
+  const canEditCurrentStore = canEditStore(session.user, storeId);
+  // ヘルプ先の候補。キャストが 0 人の店舗も選べるように、店舗一覧から作る
+  const allStoreNames = (
+    await prisma.store.findMany({ orderBy: { name: "asc" }, select: { name: true } })
+  ).map((s) => s.name);
   const snsExportShiftDays = period.shiftDays.map((day) => ({
     id: day.id,
     date: day.date.toISOString(),
@@ -202,8 +206,8 @@ export default async function ShiftPage({
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
@@ -287,6 +291,7 @@ export default async function ShiftPage({
             name: c.name,
             store: c.store,
           }))}
+          storeNames={allStoreNames}
           readOnly={!canEditCurrentStore}
           bypassShiftPeriodLocks={canEditCurrentStore}
         />

@@ -5,7 +5,7 @@ import { NavHeader } from "@/components/nav-header";
 import { RequestForm } from "@/components/request-form";
 import { CastPeriodSelector } from "@/components/cast-period-selector";
 import Link from "next/link";
-import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
+import { listCastSelectablePeriods } from "@/lib/cast-periods";
 import { getGoogleFormPublicUrl } from "@/lib/google-form-config";
 import { isSheetsConfigured } from "@/lib/google-sheets";
 import { CastGoogleFormBanner } from "@/components/cast-google-form-banner";
@@ -19,7 +19,7 @@ export default async function RequestsPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
-  const role = (session.user as any).role as string | undefined;
+  const role = session.user.role;
 
   const { storeId, periodId } = await params;
 
@@ -34,24 +34,14 @@ export default async function RequestsPage({
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
   if (role !== "cast") {
-    assertStorePageAccess(session.user as any, storeId);
+    assertStorePageAccess(session.user, storeId);
   }
 
   const userId = session.user.id;
 
   // キャスト向け: 過去〜次の期間まで切り替え可能
-  const selectablePeriods = await (async () => {
-    if (role !== "cast") return [];
-    const now = new Date();
-    const maxFuture = nextPeriod(periodFromNow(now));
-    const maxIdx = periodIndex(maxFuture);
-    const all = await prisma.shiftPeriod.findMany({
-      where: { storeId },
-      select: { id: true, year: true, month: true, half: true },
-      orderBy: [{ year: "asc" }, { month: "asc" }, { half: "asc" }],
-    });
-    return all.filter((p) => periodIndex({ year: p.year, month: p.month, half: p.half as any }) <= maxIdx) as any[];
-  })();
+  const selectablePeriods =
+    role === "cast" ? await listCastSelectablePeriods(storeId) : [];
 
   // 希望一覧: staff は従来通り（店舗所属キャスト全員 + 他店舗ヘルプ）
   // cast は「自分の分だけ」（同じ年月/半月の他店舗ヘルプ分も含む）
@@ -153,7 +143,7 @@ export default async function RequestsPage({
   });
 
   const halfLabel = period.half === "first" ? "前半" : "後半";
-  const canEditCurrentStore = role === "cast" ? true : canEditStore(session.user as any, storeId);
+  const canEditCurrentStore = role === "cast" ? true : canEditStore(session.user, storeId);
   const userRole = canEditCurrentStore ? role || "" : "viewer";
   const googleFormUrl = getGoogleFormPublicUrl();
   const validDatesYmd = period.shiftDays.map((d) =>
@@ -167,7 +157,7 @@ export default async function RequestsPage({
         user={{
           name: session.user.name,
           role: userRole,
-          storeName: (session.user as any).storeName,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-[1400px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
@@ -204,7 +194,7 @@ export default async function RequestsPage({
           )}
           {role === "cast" && (
             <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
-              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
+              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods} />
               <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
                 <Link
                   href={`/confirmed/${storeId}/${periodId}`}

@@ -7,7 +7,7 @@ import { PermissionSettingsContent } from "@/components/permission-settings-cont
 export default async function PermissionsPage() {
   const session = await auth();
   if (!session) redirect("/login");
-  const role = (session.user as { role?: string }).role;
+  const role = session.user.role;
   if (role !== "admin" && role !== "viewer") {
     redirect("/dashboard");
   }
@@ -23,8 +23,8 @@ export default async function PermissionsPage() {
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as { role: string }).role,
-          storeName: (session.user as { storeName?: string | null }).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-[960px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">

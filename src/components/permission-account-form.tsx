@@ -92,7 +92,7 @@ export function PermissionAccountForm({
     const idNorm = loginId.trim().toLowerCase();
     if (!trimmedName || !idNorm) return;
 
-    if (role !== "admin") {
+    if (role === "employee") {
       if (viewAllSelected || editAllSelected) {
         /* ok */
       } else if (viewSelected.size === 0 && editSelected.size === 0) {
@@ -107,7 +107,8 @@ export function PermissionAccountForm({
     const editStoreIds = editAllSelected
       ? []
       : Array.from(editSelected).filter((x) => x !== ALL_STORES_VALUE);
-    const accessAllStores = role === "admin" ? true : viewAllSelected || editAllSelected;
+    const accessAllStores =
+      role === "employee" ? viewAllSelected || editAllSelected : true;
     const editAllStores = role === "admin" ? true : role === "employee" && editAllSelected;
 
     setSaving(true);
@@ -217,7 +218,7 @@ export function PermissionAccountForm({
         </label>
       </fieldset>
 
-      {role !== "admin" && (
+      {role === "employee" && (
         <div className="space-y-2">
           <Label>所属店舗（複数可）</Label>
           <div className="space-y-2 rounded-md border bg-gray-50/80 p-3">
@@ -232,7 +233,6 @@ export function PermissionAccountForm({
                 type="checkbox"
                 className="mx-auto"
                 checked={editAllSelected}
-                disabled={role === "viewer"}
                 onChange={(e) => setEditAllStores(e.target.checked)}
               />
               <input
@@ -254,7 +254,6 @@ export function PermissionAccountForm({
                       type="checkbox"
                       className="mx-auto"
                       checked={editSelected.has(s.id)}
-                      disabled={role === "viewer"}
                       onChange={() => toggleEditStore(s.id)}
                     />
                     <input
@@ -278,6 +277,12 @@ export function PermissionAccountForm({
       {role === "admin" && (
         <p className="text-xs text-muted-foreground">
           管理者は全店舗で利用できます（店舗の個別指定はありません）。
+        </p>
+      )}
+
+      {role === "viewer" && (
+        <p className="text-xs text-muted-foreground">
+          閲覧者は全店舗を閲覧できます（店舗の個別指定はありません）。
         </p>
       )}
 
@@ -309,7 +314,7 @@ export function PermissionAccountForm({
           saving ||
           !name.trim() ||
           !loginId.trim() ||
-          (role !== "admin" &&
+          (role === "employee" &&
             !viewAllSelected &&
             !editAllSelected &&
             viewSelected.size === 0 &&

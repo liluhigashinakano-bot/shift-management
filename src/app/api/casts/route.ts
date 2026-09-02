@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Session } from "next-auth";
 import { prisma } from "@/lib/db";
 import { hashSync } from "bcryptjs";
 import { auth } from "@/lib/auth";
@@ -9,24 +10,54 @@ import {
   findExistingCastForUpdate,
 } from "@/lib/cast-duplicate-query";
 import { createCastUserRecord } from "@/lib/cast-create-user";
+import { getRole } from "@/lib/session-user";
 
-function requireStaffRead(session: any) {
-  if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  const role = (session.user as any).role as string | undefined;
+/**
+ * 画面に返してよい項目だけ。
+ * ⚠️ passwordHash・hourlyRate・posId をここに足さないこと。
+ *    キャストのパスワードは 6 桁の数字なので、ハッシュが漏れると総当たりで割り出せる。
+ */
+const CAST_PUBLIC_SELECT = {
+  id: true,
+  name: true,
+  castLoginId: true,
+  email: true,
+  storeId: true,
+  store: { select: { id: true, name: true } },
+} satisfies Prisma.UserSelect;
+
+function requireStaffRead(session: Session | null) {
+  if (!session) {
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+  }
+  const role = getRole(session);
   if (role !== "admin" && role !== "employee" && role !== "viewer") {
-    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
   }
   return { ok: true as const, role };
 }
 
 /** キャストの追加・編集・削除・PW再発行（管理者のみ） */
-function requireCastAdminWrite(session: any) {
-  if (!session) return { ok: false as const, res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  const role = (session.user as any).role as string | undefined;
-  if (role !== "admin") {
-    return { ok: false as const, res: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+function requireCastAdminWrite(session: Session | null) {
+  if (!session) {
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
   }
-  return { ok: true as const, role };
+  if (getRole(session) !== "admin") {
+    return {
+      ok: false as const,
+      res: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
+  }
+  return { ok: true as const };
 }
 
 /** キャスト追加・再発行と同じ6桁数字PIN */
@@ -35,17 +66,19 @@ function generateCastPin(): string {
 }
 
 // GET: キャスト一覧取得
-export async function GET(req: NextRequest) {
+export async function GET() {
   const session = await auth();
   const guard = requireStaffRead(session);
   if (!guard.ok) return guard.res;
 
   const casts = await prisma.user.findMany({
     where: { role: "cast", isTrialGuest: false },
-    include: { store: { select: { id: true, name: true } } },
+    select: CAST_PUBLIC_SELECT,
     orderBy: [{ store: { name: "asc" } }, { name: "asc" }],
   });
-  return NextResponse.json(casts);
+  return NextResponse.json(casts, {
+    headers: { "Cache-Control": "private, no-store, max-age=0" },
+  });
 }
 
 function normalizeStoreId(storeId: unknown): string | null {
@@ -90,9 +123,9 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
     if (!storeRow) {
       return NextResponse.json({ error: "指定の店舗が見つかりません" }, { status: 400 });
     }
-    if (trimmedId.includes("@")) {
+    if (trimmedId.includes("@") || /\s/.test(trimmedId)) {
       return NextResponse.json(
-        { error: "キャストIDに @ は含められません（ログイン用の短いIDを設定してください）" },
+        { error: "キャストIDに @ や空白は使えません（ログイン用の短いIDを設定してください）" },
         { status: 400 },
       );
     }
@@ -148,9 +181,9 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
     if (!trimmedName || !trimmedId) {
       return NextResponse.json({ error: "キャスト名とキャストIDは必須です" }, { status: 400 });
     }
-    if (trimmedId.includes("@")) {
+    if (trimmedId.includes("@") || /\s/.test(trimmedId)) {
       return NextResponse.json(
-        { error: "キャストIDに @ は含められません" },
+        { error: "キャストIDに @ や空白は使えません" },
         { status: 400 },
       );
     }
@@ -161,12 +194,15 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
         return NextResponse.json({ error: "指定の店舗が見つかりません" }, { status: 400 });
       }
     }
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!target || target.role !== "cast") {
+      return NextResponse.json({ error: "キャストが見つかりません" }, { status: 404 });
+    }
     const email = `${trimmedId}@cast.local`;
-    const existingUpdate = await findExistingCastForUpdate(
-      email,
-      trimmedId,
-      userId,
-    );
+    const existingUpdate = await findExistingCastForUpdate(email, trimmedId, userId);
     if (existingUpdate) {
       return NextResponse.json(
         { error: "同じキャストID（またはメール）のユーザーが既にいます" },
@@ -182,6 +218,7 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
           castLoginId: trimmedId,
           storeId: sid,
         },
+        select: CAST_PUBLIC_SELECT,
       });
       return NextResponse.json(cast);
     } catch (e) {
@@ -207,12 +244,20 @@ async function handleCastsPost(req: NextRequest): Promise<Response> {
     if (!id) {
       return NextResponse.json({ error: "id が必要です" }, { status: 400 });
     }
+    // この受け口はキャスト専用。従業員のパスワードを変えられないようにする
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true },
+    });
+    if (!target || target.role !== "cast") {
+      return NextResponse.json({ error: "キャストが見つかりません" }, { status: 404 });
+    }
     const password = generateCastPin();
-    const cast = await prisma.user.update({
+    await prisma.user.update({
       where: { id },
       data: { passwordHash: hashSync(password, 10) },
     });
-    return NextResponse.json({ castId: cast.id, password });
+    return NextResponse.json({ castId: target.id, password });
   }
 
   if (action === "delete") {

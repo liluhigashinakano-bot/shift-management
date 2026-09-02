@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { TIME_SLOTS, formatTimeSlot, getJapaneseDayOfWeek, toUtcDateKey } from "@/lib/shift-utils";
+import { clampEndToStart } from "@/lib/shift-time-range";
+import { errorMessageFromResponse } from "@/lib/api-request";
 
 type Day = { id: string; date: string; dayOfWeek: string };
 type Cast = { id: string; name: string; storeName: string | null };
@@ -59,16 +61,6 @@ function entryFromRequest(r: Request, checked: boolean): Entry {
     end: String(r.endTime),
     notes: requestNotesForForm(r),
   };
-}
-
-async function errorMessageFromResponse(res: Response): Promise<string> {
-  try {
-    const data = (await res.json()) as { error?: unknown };
-    if (typeof data.error === "string" && data.error) return data.error;
-  } catch {
-    // not JSON
-  }
-  return `保存に失敗しました (${res.status})`;
 }
 
 export function RequestForm({
@@ -491,17 +483,22 @@ export function RequestForm({
                             const checked = e.target.checked;
                             if (editingRequest) {
                               setEntries((prev) => {
+                                // いま選んでいる日の時間・備考を、移した先へ持っていく
+                                const currentKey = Object.keys(prev).find(
+                                  (k) => prev[k]?.checked,
+                                );
+                                const carried = currentKey ? prev[currentKey] : undefined;
                                 const newEnt = { ...prev };
                                 Object.keys(newEnt).forEach((k) => {
                                   newEnt[k] = { ...newEnt[k], checked: false };
                                 });
                                 if (checked) {
                                   newEnt[day.date] = {
-                                    ...prev[day.date],
                                     checked: true,
+                                    start: carried?.start ?? String(editingRequest.startTime),
+                                    end: carried?.end ?? String(editingRequest.endTime),
+                                    notes: carried?.notes ?? requestNotesForForm(editingRequest),
                                   };
-                                } else {
-                                  newEnt[day.date] = { ...prev[day.date], checked: false };
                                 }
                                 return newEnt;
                               });
@@ -543,10 +540,23 @@ export function RequestForm({
                           className="border border-gray-300 rounded px-2 py-1 text-xs"
                           value={entry.start}
                           onChange={(e) =>
-                            setEntries((prev) => ({
-                              ...prev,
-                              [day.date]: { ...prev[day.date], start: e.target.value },
-                            }))
+                            setEntries((prev) => {
+                              const current = prev[day.date];
+                              if (!current) return prev;
+                              const nextStart = parseFloat(e.target.value);
+                              const nextEnd = clampEndToStart(
+                                nextStart,
+                                parseFloat(current.end),
+                              );
+                              return {
+                                ...prev,
+                                [day.date]: {
+                                  ...current,
+                                  start: e.target.value,
+                                  end: String(nextEnd),
+                                },
+                              };
+                            })
                           }
                           disabled={modalLocked}
                         >

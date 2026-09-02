@@ -48,17 +48,16 @@ type RemoteHelpShift = {
 };
 
 type Props = {
-  periodId: string;
-  month: number;
   days: Day[];
   initialAdjustments: Adjustment[];
   shiftRequests: ShiftRequest[];
   /** 自店舗日付に紐づく「他店で実際に入っているシフト」（確定列に店名付きで出す） */
   remoteHelpShifts?: RemoteHelpShift[];
   adjustedCasts: Cast[];
-  allCasts: Cast[];
-  /** false のとき「確定」列は空（希望列のみ比較表示） */
+  /** true のとき確定列を濃く塗り分ける（シフト確定後） */
   showConfirmedShiftColumn: boolean;
+  /** false のとき確定列の中身を出さない（確定前のシフトをキャストに見せない） */
+  confirmedVisible?: boolean;
 };
 
 function dayHeaderBg(dow: string): string {
@@ -73,18 +72,19 @@ type DayConfirmedCtx = {
 };
 
 export function AdjustmentTable({
-  periodId,
-  month,
   days,
   initialAdjustments,
   shiftRequests,
   remoteHelpShifts = [],
   adjustedCasts,
-  allCasts,
   showConfirmedShiftColumn,
+  confirmedVisible = true,
 }: Props) {
   const [selectedCast, setSelectedCast] = useState(adjustedCasts[0]?.id || "");
-  const adjustments = initialAdjustments;
+  const adjustments = useMemo(
+    () => (confirmedVisible ? initialAdjustments : []),
+    [confirmedVisible, initialAdjustments],
+  );
 
   // 選択キャストの調整データ
   const castAdjs = useMemo(() => {
@@ -105,16 +105,20 @@ export function AdjustmentTable({
   const dayConfirmedContext = useMemo(() => {
     const map = new Map<string, DayConfirmedCtx>();
     for (const day of days) {
-      const remote = remoteHelpShifts.find(
-        (r) => r.castId === selectedCast && r.localDayId === day.id,
-      );
-      const localSlots = day.shiftSlots
-        .filter((s) => s.castId === selectedCast)
-        .sort((a, b) => a.timeSlot - b.timeSlot);
+      const remote = confirmedVisible
+        ? remoteHelpShifts.find(
+            (r) => r.castId === selectedCast && r.localDayId === day.id,
+          )
+        : undefined;
+      const localSlots = confirmedVisible
+        ? day.shiftSlots
+            .filter((s) => s.castId === selectedCast)
+            .sort((a, b) => a.timeSlot - b.timeSlot)
+        : [];
       map.set(day.id, { remote, localSlots });
     }
     return map;
-  }, [days, selectedCast, remoteHelpShifts]);
+  }, [days, selectedCast, remoteHelpShifts, confirmedVisible]);
 
   // 選択キャストの調整データ（dayIdでマッピング）
   const adjByDay = useMemo(() => {

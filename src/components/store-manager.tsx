@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
+import { postJson } from "@/lib/api-request";
 
 type Store = { id: string; name: string; castCount: number };
 
@@ -27,37 +28,48 @@ export function StoreManager({
   };
 
   const handleAdd = async () => {
-    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed || saving) return;
     setSaving(true);
-    await fetch("/api/stores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "create", name }),
-    });
-    setSaving(false);
-    setAddModal(false);
-    setName("");
-    reload();
+    try {
+      const result = await postJson(
+        "/api/stores",
+        { action: "create", name: trimmed },
+        { fallbackMessage: "店舗を追加できませんでした" },
+      );
+      // 失敗したら窓を閉じない（閉じると成功したように見える）
+      if (!result.ok) return;
+      setAddModal(false);
+      setName("");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleUpdate = async () => {
-    if (!editStore || !name) return;
+    const trimmed = name.trim();
+    if (!editStore || !trimmed || saving) return;
     setSaving(true);
-    await fetch("/api/stores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "update", id: editStore.id, name }),
-    });
-    setSaving(false);
-    setEditStore(null);
-    setName("");
-    reload();
+    try {
+      const result = await postJson(
+        "/api/stores",
+        { action: "update", id: editStore.id, name: trimmed },
+        { fallbackMessage: "店舗名を変更できませんでした" },
+      );
+      if (!result.ok) return;
+      setEditStore(null);
+      setName("");
+      await reload();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       {readOnly && (
-        <p className="text-sm text-muted-foreground">閲覧のみ（変更は管理者・従業員が行います）</p>
+        <p className="text-sm text-muted-foreground">閲覧のみ（店舗の追加・編集は管理者が行います）</p>
       )}
       {!readOnly && (
       <Button
@@ -114,7 +126,7 @@ export function StoreManager({
           </div>
           <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
             <Button variant="outline" onClick={() => setAddModal(false)}>キャンセル</Button>
-            <Button onClick={handleAdd} disabled={saving || !name} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+            <Button onClick={handleAdd} disabled={saving || !name.trim()} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
               {saving ? "保存中..." : "追加"}
             </Button>
           </div>
@@ -131,7 +143,7 @@ export function StoreManager({
           </div>
           <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
             <Button variant="outline" onClick={() => setEditStore(null)}>キャンセル</Button>
-            <Button onClick={handleUpdate} disabled={saving || !name} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+            <Button onClick={handleUpdate} disabled={saving || !name.trim()} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
               {saving ? "保存中..." : "更新"}
             </Button>
           </div>

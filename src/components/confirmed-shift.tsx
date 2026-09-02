@@ -61,7 +61,6 @@ type Props = {
   defaultSelectedCastId?: string;
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   helpSlotsByDay?: Record<string, HelpSlot[]>;
-  storeName?: string;
   /** 退勤29:00希望時に退勤列の名前を隠す判定用 */
   shiftRequests?: { castId: string; endTime: number; date: string }[];
 };
@@ -196,7 +195,6 @@ export function ConfirmedShift({
   defaultSelectedCastId,
   allCasts,
   helpSlotsByDay,
-  storeName,
   shiftRequests = [],
 }: Props) {
   const [selectedCast, setSelectedCast] = useState(defaultSelectedCastId ?? "");
@@ -443,7 +441,7 @@ export function ConfirmedShift({
                                       hideEndCastNameForWishEnd29(r.endTime, slot),
                                   );
                                   if (reqHide) return null;
-                                  const helpStore = (s as any)._helpStore;
+                                  const helpStore = s._helpStore;
                                   const castInfo = allCasts.find((c) => c.id === s.castId);
                                   const short = castSuffixForShiftBadge(s.cast);
                                   const displayName = helpStore
@@ -583,6 +581,7 @@ function SendListModal({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   // シフトテキスト生成
   const text = useMemo(() => {
@@ -637,10 +636,17 @@ function SendListModal({
     return lines.join("\n");
   }, [plainDays, helpSlotsByDay, castId, month, localStoreName]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFailed(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // https でない場所や古いブラウザではコピーできない。黙って成功に見せない
+      setCopied(false);
+      setCopyFailed(true);
+    }
   };
 
   return (
@@ -649,9 +655,14 @@ function SendListModal({
         <pre className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm whitespace-pre-wrap font-sans">
           {text}
         </pre>
+        {copyFailed && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            コピーできませんでした。上の文章を長押し（またはドラッグ）で選んでコピーしてください。
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>閉じる</Button>
-          <Button onClick={handleCopy} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
+          <Button onClick={() => void handleCopy()} className="bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white">
             {copied ? "コピーしました！" : "テキストをコピー"}
           </Button>
         </div>

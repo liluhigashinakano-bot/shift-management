@@ -19,7 +19,7 @@ export function CastGoogleFormBanner({ formUrl, validDatesYmd }: Props) {
         フォームから送信した内容は、管理者が「フォームから取り込み」を実行するとこの一覧に反映されます（アプリ上の登録と併用できます）。
       </p>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-sky-900/90">
-        <li>メールアドレスは<strong>ログインと同じ</strong>ものを入力してください。</li>
+        <li>最初の欄には、ログインに使う<strong>キャストID</strong>を入力してください。</li>
         <li>
           日付は<strong>YYYY-MM-DD</strong>形式（例: 2026-04-17）。この期間の日付例: {sample}
           {more}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { getJapaneseDayOfWeek } from "@/lib/shift-utils";
+import { postJson } from "@/lib/api-request";
 
 type ShiftDay = {
   id: string;
@@ -25,6 +26,19 @@ type Props = {
   onSaved: () => void;
 };
 
+/** ShiftDay.notes は {"text":..., "slotMemos":{...}} の JSON。壊れていても落とさない */
+function parseNotes(raw: string | null): { text: string; rest: Record<string, unknown> } {
+  if (!raw) return { text: "", rest: {} };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object") return { text: "", rest: {} };
+    const { text, ...rest } = parsed;
+    return { text: typeof text === "string" ? text : "", rest };
+  } catch {
+    return { text: raw, rest: {} };
+  }
+}
+
 export function DayInfoEditor({ day, onClose, onSaved }: Props) {
   const d = new Date(day.date);
   const label = `${d.getMonth() + 1}/${d.getDate()}(${getJapaneseDayOfWeek(d)})`;
@@ -32,50 +46,40 @@ export function DayInfoEditor({ day, onClose, onSaved }: Props) {
   const totalHours = (day.shiftSlots?.length ?? 0) * 0.5;
   const autoBudget = totalHours > 0 ? totalHours * 6000 : 0;
 
+  const initialNotes = parseNotes(day.notes);
+
   const [eventName, setEventName] = useState(day.eventName ?? "");
-  const [expectedVisitors, setExpectedVisitors] = useState(
-    day.expectedVisitors ?? ""
-  );
-  const [notes, setNotes] = useState(() => {
-    if (!day.notes) return "";
-    try {
-      const parsed = JSON.parse(day.notes);
-      return parsed.text || "";
-    } catch {
-      return day.notes;
-    }
-  });
-  const [employeeOnDuty, setEmployeeOnDuty] = useState(
-    day.employeeOnDuty ?? ""
-  );
+  const [expectedVisitors, setExpectedVisitors] = useState(day.expectedVisitors ?? "");
+  const [notes, setNotes] = useState(initialNotes.text);
+  const [employeeOnDuty, setEmployeeOnDuty] = useState(day.employeeOnDuty ?? "");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "updateDay",
-        dayId: day.id,
-        targetBudget: autoBudget || null,
-        eventName: eventName || null,
-        expectedVisitors: expectedVisitors || null,
-        notes: (() => {
-          // slotMemosを保持してtextだけ更新
-          let parsed: any = {};
-          if (day.notes) {
-            try { parsed = JSON.parse(day.notes); } catch { parsed = {}; }
-          }
-          parsed.text = notes || "";
-          return JSON.stringify(parsed);
-        })(),
-        employeeOnDuty: employeeOnDuty || null,
-      }),
-    });
-    setSaving(false);
-    onSaved();
-    onClose();
+    try {
+      // slotMemos などを保ったまま text だけ入れ替える
+      const nextNotes = JSON.stringify({ ...initialNotes.rest, text: notes || "" });
+      const result = await postJson(
+        "/api/shifts",
+        {
+          action: "updateDay",
+          dayId: day.id,
+          targetBudget: autoBudget || null,
+          eventName: eventName || null,
+          expectedVisitors: expectedVisitors || null,
+          notes: nextNotes,
+          employeeOnDuty: employeeOnDuty || null,
+        },
+        { fallbackMessage: "日別情報を保存できませんでした" },
+      );
+      // 失敗したら窓を閉じない（閉じると成功したように見える）
+      if (!result.ok) return;
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

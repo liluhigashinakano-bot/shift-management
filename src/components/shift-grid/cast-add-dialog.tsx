@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { TIME_SLOTS, formatTimeSlot } from "@/lib/shift-utils";
+import { clampEndToStart } from "@/lib/shift-time-range";
+import { postJson } from "@/lib/api-request";
 import { TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-constants";
 
 type Props = {
@@ -13,6 +15,8 @@ type Props = {
   dayLabel: string;
   allCasts: { id: string; name: string; store: { name: string } | null }[];
   currentStoreName: string;
+  /** ヘルプ先に選べる店舗名（キャストが 0 人の店舗も選べるように別で渡す） */
+  storeNames?: string[];
   /** その日の自店スロット（重複チェック用）。時間帯が重ならなければ同じ日に再度追加可能 */
   existingDaySlots: { castId: string; timeSlot: number }[];
   /** 他店ヘルプでこの日占有している半日（自店DBに無い時間も重複扱い） */
@@ -32,6 +36,7 @@ export function CastAddDialog({
   dayLabel,
   allCasts,
   currentStoreName,
+  storeNames,
   existingDaySlots,
   helpAwayHalfSlots = [],
   shiftRequestsLocked = false,
@@ -49,16 +54,20 @@ export function CastAddDialog({
   const [tab, setTab] = useState<"own" | "help" | "trial">("own");
   const [helpStore, setHelpStore] = useState("");
 
-  // 店舗一覧（現在の店舗以外）
+  // 店舗一覧（現在の店舗以外）。キャストが 0 人の店舗も選べるようにする
   const otherStores = useMemo(() => {
     const storeSet = new Set<string>();
-    allCasts.forEach((c) => {
-      if (c.store && c.store.name !== currentStoreName) {
-        storeSet.add(c.store.name);
+    if (storeNames && storeNames.length > 0) {
+      for (const name of storeNames) {
+        if (name !== currentStoreName) storeSet.add(name);
       }
-    });
-    return [...storeSet].sort();
-  }, [allCasts, currentStoreName]);
+    } else {
+      allCasts.forEach((c) => {
+        if (c.store && c.store.name !== currentStoreName) storeSet.add(c.store.name);
+      });
+    }
+    return [...storeSet].sort((a, b) => a.localeCompare(b, "ja"));
+  }, [allCasts, currentStoreName, storeNames]);
 
   // タブに応じたキャスト一覧（体入タブはテキスト入力のため未使用）
   const filteredCasts = useMemo(() => {
@@ -74,6 +83,17 @@ export function CastAddDialog({
 
   const startNum = parseFloat(startTime);
   const endNum = parseFloat(endTime);
+
+  /** 出勤を変えたら、退勤が出勤以下にならないように寄せる */
+  const handleStartChange = (value: string) => {
+    setStartTime(value);
+    const nextStart = parseFloat(value);
+    const currentEnd = parseFloat(endTime);
+    if (Number.isFinite(nextStart) && Number.isFinite(currentEnd)) {
+      const fixed = clampEndToStart(nextStart, currentEnd);
+      if (fixed !== currentEnd) setEndTime(String(fixed));
+    }
+  };
 
   /** 選択した [出勤, 退勤) と自店既存または他店ヘルプの占有が重なるキャストは追加不可 */
   const overlapByCastId = useMemo(() => {
@@ -91,42 +111,42 @@ export function CastAddDialog({
   }, [filteredCasts, existingDaySlots, helpAwayHalfSlots, startNum, endNum]);
 
   const canSubmit =
-    tab === "trial"
-      ? trialGuestName.trim().length > 0
-      : Boolean(castId);
+    tab === "trial" ? trialGuestName.trim().length > 0 : Boolean(castId);
 
   const handleSave = async () => {
-    if (!canSubmit || addBlocked) return;
+    if (!canSubmit || addBlocked || saving) return;
     setSaving(true);
+    try {
+      const body =
+        tab === "trial"
+          ? {
+              action: "addCast",
+              dayId,
+              trialGuestName: trialGuestName.trim(),
+              startTime: startNum,
+              endTime: endNum,
+              memo: memo || null,
+            }
+          : {
+              action: "addCast",
+              dayId,
+              castId,
+              startTime: startNum,
+              endTime: endNum,
+              memo: memo || null,
+            };
 
-    const body =
-      tab === "trial"
-        ? {
-            action: "addCast",
-            dayId,
-            trialGuestName: trialGuestName.trim(),
-            startTime: parseFloat(startTime),
-            endTime: parseFloat(endTime),
-            memo: memo || null,
-          }
-        : {
-            action: "addCast",
-            dayId,
-            castId,
-            startTime: parseFloat(startTime),
-            endTime: parseFloat(endTime),
-            memo: memo || null,
-          };
+      const result = await postJson("/api/shifts", body, {
+        fallbackMessage: "シフトを追加できませんでした",
+      });
+      // 失敗したら窓を閉じない（閉じると成功したように見える）
+      if (!result.ok) return;
 
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    setSaving(false);
-    onSaved();
-    onClose();
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -227,7 +247,10 @@ export function CastAddDialog({
         {/* 体入は登録キャストの select と DOM を共有しない（ネイティブ text で確実に区別） */}
         {tab === "trial" && (
           <div key="trial-guest-fields" className="space-y-1">
-            <label htmlFor="shift-add-trial-guest-name" className="text-sm font-medium leading-none">
+            <label
+              htmlFor="shift-add-trial-guest-name"
+              className="text-sm font-medium leading-none"
+            >
               キャスト名（必須）
             </label>
             <input
@@ -277,7 +300,7 @@ export function CastAddDialog({
             <select
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
               value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
+              onChange={(e) => handleStartChange(e.target.value)}
             >
               {TIME_SLOTS.map((slot) => (
                 <option key={slot} value={slot.toString()}>
@@ -293,7 +316,7 @@ export function CastAddDialog({
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
             >
-              {TIME_SLOTS.filter((s) => s > parseFloat(startTime)).map((slot) => (
+              {TIME_SLOTS.filter((s) => s > startNum).map((slot) => (
                 <option key={slot} value={slot.toString()}>
                   {formatTimeSlot(slot)}
                 </option>

@@ -9,6 +9,7 @@ import {
   type ShiftPeriodKey,
 } from "@/lib/period-utils";
 import { getAccessibleStoreIds } from "@/lib/store-access";
+import { getRole } from "@/lib/session-user";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const role = (session.user as any).role as string | undefined;
+  const role = getRole(session);
   if (role === "cast") {
     return new Response("Forbidden", { status: 403 });
   }
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
-  const allowedIds = getAccessibleStoreIds(session.user as any);
+  const allowedIds = getAccessibleStoreIds(session.user);
   const stores =
     allowedIds === null
       ? allStores

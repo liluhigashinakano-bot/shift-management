@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Session } from "next-auth";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { assertStaffShiftPeriodNotFinalized } from "@/lib/shift-slot-lock";
-import { canAccessStore, canEditStore, type SessionUserLike } from "@/lib/store-access";
-import { createTrialGuestUser } from "@/lib/trial-guest-user";
+import { canAccessStore, canEditStore } from "@/lib/store-access";
+import { getRole } from "@/lib/session-user";
+import {
+  createTrialGuestUser,
+  deleteTrialGuestIfUnused,
+} from "@/lib/trial-guest-user";
 import { parseTrialGuestName, TRIAL_GUEST_NAME_MAX_LEN } from "@/lib/trial-guest-constants";
+import { INVALID_RANGE_MESSAGE, isValidShiftRange } from "@/lib/shift-time-range";
+import { repairSlotBoundaries, slotsForRange } from "@/lib/shift-slot-writer";
 
-function getRole(session: any) {
-  return (session?.user as any)?.role as string | undefined;
-}
-
-function assertCanEditStore(session: any, storeId: string) {
-  if (!canEditStore(session.user as SessionUserLike, storeId)) {
+function assertCanEditStore(session: Session, storeId: string) {
+  if (!canEditStore(session.user, storeId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   return null;
+}
+
+function invalidRange() {
+  return NextResponse.json({ error: INVALID_RANGE_MESSAGE }, { status: 400 });
+}
+
+function asOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return t.length > 0 ? t : null;
 }
 
 // GET: シフト期間のデータを取得
@@ -48,13 +61,11 @@ export async function GET(req: NextRequest) {
   if (!period) {
     return NextResponse.json({ error: "Period not found" }, { status: 404 });
   }
-  if (!canAccessStore(session.user as SessionUserLike, period.storeId)) {
+  if (!canAccessStore(session.user, period.storeId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // シフト希望情報をdayIdにマッピングして返す。
-  // Undo/Redo のスナップショット復元で createdAt/updatedAt/status を保持できるよう、
-  // タイムスタンプ系も合わせて返却する。
   const requests = await prisma.shiftRequest.findMany({
     where: { periodId },
     select: {
@@ -144,7 +155,7 @@ export async function GET(req: NextRequest) {
       for (const [cid, slots] of castSlots) {
         const castName = castNameMap.get(cid) || "不明";
         if (!helpInfo[myDayId]) helpInfo[myDayId] = [];
-        helpInfo[myDayId].push({
+        helpInfo[myDayId]!.push({
           castId: cid,
           castName,
           storeName: op.store.name,
@@ -163,20 +174,31 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const role = getRole(session);
-  if (role !== "admin" && role !== "employee") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (role !== "admin" && role !== "employee") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  const body = await req.json();
-  const { action, dayId, castId } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "リクエストの形式が不正です" }, { status: 400 });
+  }
+
+  const action = typeof body.action === "string" ? body.action : "";
+  const dayId = typeof body.dayId === "string" ? body.dayId : "";
+  const castId = typeof body.castId === "string" ? body.castId : "";
 
   if (action === "addCast") {
-    const { startTime, endTime, memo, trialGuestName } = body as {
-      startTime?: number;
-      endTime?: number;
-      memo?: string | null;
-      trialGuestName?: string | null;
-    };
-    const start = startTime as number;
-    const end = endTime as number;
+    const start = body.startTime as number;
+    const end = body.endTime as number;
+    const memo = asOptionalString(body.memo);
+    const trialGuestName = body.trialGuestName;
+
+    if (!isValidShiftRange(start, end)) return invalidRange();
+    if (!dayId) {
+      return NextResponse.json({ error: "dayId is required" }, { status: 400 });
+    }
 
     const day = await prisma.shiftDay.findUnique({
       where: { id: dayId },
@@ -202,9 +224,8 @@ export async function POST(req: NextRequest) {
     const lockRes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockRes) return lockRes;
 
-    let effectiveCastId = castId as string | undefined;
+    let trialName: string | null = null;
     if (trialGuestName != null && String(trialGuestName).trim() !== "") {
-      let trialName: string;
       try {
         trialName = parseTrialGuestName(trialGuestName);
       } catch {
@@ -213,27 +234,32 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      const guest = await createTrialGuestUser(trialName, day.period.storeId);
-      effectiveCastId = guest.id;
     } else if (!castId) {
-      return NextResponse.json({ error: "castId or trialGuestName is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "castId or trialGuestName is required" },
+        { status: 400 },
+      );
     }
 
-    const cast = await prisma.user.findUnique({
-      where: { id: effectiveCastId },
-      select: { storeId: true },
-    });
+    // 体入でないときは、指定されたキャストが実在することを先に確かめる
+    const existingCast = trialName
+      ? null
+      : await prisma.user.findUnique({
+          where: { id: castId },
+          select: { id: true, storeId: true, role: true },
+        });
+    if (!trialName && (!existingCast || existingCast.role !== "cast")) {
+      return NextResponse.json({ error: "キャストが見つかりません" }, { status: 404 });
+    }
 
+    // 所属が他店なら、その店の同じ日から重なる時間帯だけ外す
     let homeDayId: string | null = null;
     let homePeriodId: string | null = null;
-    let homeExisting: { timeSlot: number }[] = [];
-    const isCrossStore =
-      Boolean(cast?.storeId) && cast!.storeId !== day.period.storeId;
-
-    if (isCrossStore && cast?.storeId) {
+    const homeStoreId = existingCast?.storeId ?? null;
+    if (homeStoreId && homeStoreId !== day.period.storeId) {
       const homePeriod = await prisma.shiftPeriod.findFirst({
         where: {
-          storeId: cast.storeId,
+          storeId: homeStoreId,
           year: day.period.year,
           month: day.period.month,
           half: day.period.half,
@@ -250,84 +276,62 @@ export async function POST(req: NextRequest) {
           where: { periodId: homePeriod.id, date: day.date },
           select: { id: true },
         });
-        if (homeDay) {
-          homeDayId = homeDay.id;
-          homeExisting = await prisma.shiftSlot.findMany({
-            where: { dayId: homeDay.id, castId: effectiveCastId! },
-            orderBy: { timeSlot: "asc" },
-            select: { timeSlot: true },
-          });
-        }
+        if (homeDay) homeDayId = homeDay.id;
       }
     }
 
-    const targetStoreName = day.period.store.name;
-    const adjustmentReason = `→ ${targetStoreName}`;
-
-    const newSlots: Array<{
-      dayId: string;
-      timeSlot: number;
-      castId: string;
-      isStart: boolean;
-      isEnd: boolean;
-      memo: string | null;
-    }> = [];
-    for (let t = start; t < end; t += 0.5) {
-      newSlots.push({
-        dayId,
-        timeSlot: t,
-        castId: effectiveCastId!,
-        isStart: t === start,
-        isEnd: t + 0.5 >= end,
-        memo: t === start ? (memo ?? null) : null,
-      });
-    }
+    const adjustmentReason = `→ ${day.period.store.name}`;
 
     await prisma.$transaction(async (tx) => {
+      const effectiveCastId = trialName
+        ? (await createTrialGuestUser(trialName, day.period.storeId, tx)).id
+        : castId;
+
       if (homeDayId && homeDayId !== dayId) {
-        await tx.shiftSlot.deleteMany({
-          where: { dayId: homeDayId, castId: effectiveCastId! },
+        const removedFromHome = await tx.shiftSlot.findMany({
+          where: {
+            dayId: homeDayId,
+            castId: effectiveCastId,
+            timeSlot: { gte: start, lt: end },
+          },
+          orderBy: { timeSlot: "asc" },
+          select: { timeSlot: true },
         });
-        if (homeExisting.length > 0) {
-          const originalStart = homeExisting[0].timeSlot;
-          const originalEnd = homeExisting[homeExisting.length - 1].timeSlot + 0.5;
+        if (removedFromHome.length > 0) {
+          await tx.shiftSlot.deleteMany({
+            where: {
+              dayId: homeDayId,
+              castId: effectiveCastId,
+              timeSlot: { gte: start, lt: end },
+            },
+          });
           await tx.shiftAdjustment.create({
             data: {
               dayId: homeDayId,
-              castId: effectiveCastId!,
-              originalStart,
-              originalEnd,
+              castId: effectiveCastId,
+              originalStart: removedFromHome[0]!.timeSlot,
+              originalEnd: removedFromHome[removedFromHome.length - 1]!.timeSlot + 0.5,
               adjustedStart: null,
               adjustedEnd: null,
               action: "help",
               reason: adjustmentReason,
             },
           });
+          await repairSlotBoundaries(tx, homeDayId, effectiveCastId);
         }
       }
 
-      await tx.shiftSlot.deleteMany({ where: { dayId, castId: effectiveCastId! } });
+      // 重なる時間帯だけ差し替える。
+      // 以前はその日のスロットを全部消していたため、同じ日に 2 回追加すると
+      // 先に入れた時間帯が黙って消えていた。
+      await tx.shiftSlot.deleteMany({
+        where: { dayId, castId: effectiveCastId, timeSlot: { gte: start, lt: end } },
+      });
+      const newSlots = slotsForRange(dayId, effectiveCastId, start, end, memo);
       if (newSlots.length > 0) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
-
-      const existingRequest = await tx.shiftRequest.findFirst({
-        where: { castId: effectiveCastId!, periodId: day.periodId, date: day.date },
-        select: { id: true },
-      });
-      if (!existingRequest) {
-        await tx.shiftRequest.create({
-          data: {
-            castId: effectiveCastId!,
-            periodId: day.periodId,
-            date: day.date,
-            startTime: start,
-            endTime: end,
-            notes: memo || null,
-            status: "approved",
-          },
-        });
-      }
+      await repairSlotBoundaries(tx, dayId, effectiveCastId);
     });
 
     return NextResponse.json({ ok: true });
@@ -337,31 +341,17 @@ export async function POST(req: NextRequest) {
    * 自店舗のシフト表で開いた「キャスト編集モーダル」のヘルプ出勤タブから、
    * 当該キャストを別店舗のシフト表へヘルプとして追加する。
    *
-   * 入力:
-   *   sourceDayId   ... 自店舗側の ShiftDay.id（同一の年/月/前後半 を解決するため）
-   *   targetStoreName ... 追加先店舗の名称（Store.name は @unique）
-   *   castId        ... 追加するキャスト（自店舗・別店舗いずれでも可）
-   *   startTime/endTime/memo ... 通常の addCast と同じ
-   *
-   * 権限: sourceDay が属する店舗（開いているシフト表の店）にアクセスできること。
+   * 権限: sourceDay が属する店舗（開いているシフト表の店）を編集できること。
    * 追加先店舗へのアクセスは不要（自店から他店へヘルプを登録する操作のため）。
-   *
-   * 振る舞いは addCast と概ね同等で:
-   *   - [startTime, endTime) の範囲だけ他店日にスロットを作成し、自店（および別 home 日）からは
-   *     その時間帯のスロットのみ削除（前後の帯は残す）。境界の isStart/isEnd を再計算する。
-   *   - ShiftRequest が無ければ作成（既存があれば希望を上書きしない）
-   * 違いは「追加先 dayId をクライアントから受け取らず、サーバー側で
-   *   targetStoreName + sourceDay の年月半 + 同じ日付 を解決する」点。
    */
   if (action === "addCastHelp") {
-    const { sourceDayId, targetStoreName, startTime, endTime, memo } = body as {
-      sourceDayId?: string;
-      targetStoreName?: string;
-      startTime?: number;
-      endTime?: number;
-      memo?: string | null;
-    };
-    const helpCastId = castId as string | undefined;
+    const sourceDayId = typeof body.sourceDayId === "string" ? body.sourceDayId : "";
+    const targetStoreName =
+      typeof body.targetStoreName === "string" ? body.targetStoreName : "";
+    const start = body.startTime as number;
+    const end = body.endTime as number;
+    const memo = asOptionalString(body.memo);
+    const helpCastId = castId;
 
     if (!sourceDayId || !targetStoreName || !helpCastId) {
       return NextResponse.json(
@@ -369,12 +359,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    if (typeof startTime !== "number" || typeof endTime !== "number" || endTime <= startTime) {
-      return NextResponse.json(
-        { error: "startTime / endTime are invalid" },
-        { status: 400 },
-      );
-    }
+    if (!isValidShiftRange(start, end)) return invalidRange();
 
     const sourceDay = await prisma.shiftDay.findUnique({
       where: { id: sourceDayId },
@@ -396,12 +381,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Target store not found" }, { status: 404 });
     }
 
-    // 自店シフト表からのヘルプ登録が主用途のため、追加先店舗ではなく「操作している日の店舗」で権限を判定する
-    if (!canEditStore(session.user as SessionUserLike, sourceDay.period.storeId)) {
-      return NextResponse.json(
-        { error: "Forbidden: source store" },
-        { status: 403 },
-      );
+    if (!canEditStore(session.user, sourceDay.period.storeId)) {
+      return NextResponse.json({ error: "Forbidden: source store" }, { status: 403 });
     }
 
     const targetPeriod = await prisma.shiftPeriod.findFirst({
@@ -473,9 +454,6 @@ export async function POST(req: NextRequest) {
       if (lockHome) return lockHome;
     }
 
-    const start = startTime as number;
-    const end = endTime as number;
-
     const sourceExisting = await prisma.shiftSlot.findMany({
       where: { dayId: sourceDayId, castId: helpCastId },
       orderBy: { timeSlot: "asc" },
@@ -491,52 +469,12 @@ export async function POST(req: NextRequest) {
         : [];
 
     const adjustmentReason = `→ ${targetStoreName}`;
-
-    const newSlots: Array<{
-      dayId: string;
-      timeSlot: number;
-      castId: string;
-      isStart: boolean;
-      isEnd: boolean;
-      memo: string | null;
-    }> = [];
-    for (let t = start; t < end; t += 0.5) {
-      newSlots.push({
-        dayId: targetDay.id,
-        timeSlot: t,
-        castId: helpCastId,
-        isStart: t === start,
-        isEnd: t + 0.5 >= end,
-        memo: t === start ? (memo ?? null) : null,
-      });
-    }
-
+    const newSlots = slotsForRange(targetDay.id, helpCastId, start, end, memo);
     const removedFromSource = sourceExisting.filter(
       (s) => s.timeSlot >= start && s.timeSlot < end,
     );
 
     await prisma.$transaction(async (tx) => {
-      const repairBoundaries = async (dId: string, cId: string) => {
-        const slots = await tx.shiftSlot.findMany({
-          where: { dayId: dId, castId: cId },
-          orderBy: { timeSlot: "asc" },
-          select: { id: true, timeSlot: true },
-        });
-        if (slots.length === 0) return;
-        const first = slots[0].timeSlot;
-        const last = slots[slots.length - 1].timeSlot;
-        const shiftEnd = last + 0.5;
-        for (const s of slots) {
-          await tx.shiftSlot.update({
-            where: { id: s.id },
-            data: {
-              isStart: s.timeSlot === first,
-              isEnd: s.timeSlot + 0.5 >= shiftEnd,
-            },
-          });
-        }
-      };
-
       await tx.shiftSlot.deleteMany({
         where: {
           dayId: sourceDayId,
@@ -546,15 +484,12 @@ export async function POST(req: NextRequest) {
       });
 
       if (removedFromSource.length > 0) {
-        const originalStart = removedFromSource[0].timeSlot;
-        const originalEnd =
-          removedFromSource[removedFromSource.length - 1].timeSlot + 0.5;
         await tx.shiftAdjustment.create({
           data: {
             dayId: sourceDayId,
             castId: helpCastId,
-            originalStart,
-            originalEnd,
+            originalStart: removedFromSource[0]!.timeSlot,
+            originalEnd: removedFromSource[removedFromSource.length - 1]!.timeSlot + 0.5,
             adjustedStart: null,
             adjustedEnd: null,
             action: "help",
@@ -575,14 +510,12 @@ export async function POST(req: NextRequest) {
               timeSlot: { gte: start, lt: end },
             },
           });
-          const ho0 = removedFromHome[0].timeSlot;
-          const ho1 = removedFromHome[removedFromHome.length - 1].timeSlot + 0.5;
           await tx.shiftAdjustment.create({
             data: {
               dayId: homeDayId,
               castId: helpCastId,
-              originalStart: ho0,
-              originalEnd: ho1,
+              originalStart: removedFromHome[0]!.timeSlot,
+              originalEnd: removedFromHome[removedFromHome.length - 1]!.timeSlot + 0.5,
               adjustedStart: null,
               adjustedEnd: null,
               action: "help",
@@ -603,29 +536,11 @@ export async function POST(req: NextRequest) {
         await tx.shiftSlot.createMany({ data: newSlots });
       }
 
-      await repairBoundaries(sourceDayId, helpCastId);
+      await repairSlotBoundaries(tx, sourceDayId, helpCastId);
       if (homeDayId && homeDayId !== sourceDayId) {
-        await repairBoundaries(homeDayId, helpCastId);
+        await repairSlotBoundaries(tx, homeDayId, helpCastId);
       }
-      await repairBoundaries(targetDay.id, helpCastId);
-
-      const existingRequest = await tx.shiftRequest.findFirst({
-        where: { castId: helpCastId, periodId: targetPeriod.id, date: sourceDay.date },
-        select: { id: true },
-      });
-      if (!existingRequest) {
-        await tx.shiftRequest.create({
-          data: {
-            castId: helpCastId,
-            periodId: targetPeriod.id,
-            date: sourceDay.date,
-            startTime: start,
-            endTime: end,
-            notes: memo || null,
-            status: "approved",
-          },
-        });
-      }
+      await repairSlotBoundaries(tx, targetDay.id, helpCastId);
     });
 
     return NextResponse.json({ ok: true });
@@ -633,7 +548,10 @@ export async function POST(req: NextRequest) {
 
   // 削除 + 調整記録を自動作成
   if (action === "removeCast") {
-    const { reason } = body;
+    const reason = asOptionalString(body.reason);
+    if (!dayId || !castId) {
+      return NextResponse.json({ error: "dayId と castId が必要です" }, { status: 400 });
+    }
 
     const dayForSlotLock = await prisma.shiftDay.findUnique({
       where: { id: dayId },
@@ -647,39 +565,38 @@ export async function POST(req: NextRequest) {
     const slotLockRm = await assertStaffShiftPeriodNotFinalized(dayForSlotLock.periodId);
     if (slotLockRm) return slotLockRm;
 
-    // 削除前に元の時間を記録
-    const existing = await prisma.shiftSlot.findMany({
-      where: { dayId, castId },
-      orderBy: { timeSlot: "asc" },
-    });
-
-    if (existing.length > 0) {
-      const originalStart = existing[0].timeSlot;
-      const originalEnd = existing[existing.length - 1].timeSlot + 0.5;
-
-      // 調整記録を作成
-      await prisma.shiftAdjustment.create({
-        data: {
-          dayId,
-          castId,
-          originalStart,
-          originalEnd,
-          adjustedStart: null,
-          adjustedEnd: null,
-          action: "cut",
-          reason: reason || "シフト表から削除",
-        },
+    await prisma.$transaction(async (tx) => {
+      // 削除前に元の時間を記録
+      const existing = await tx.shiftSlot.findMany({
+        where: { dayId, castId },
+        orderBy: { timeSlot: "asc" },
+        select: { timeSlot: true },
       });
-    }
 
-    await prisma.shiftSlot.deleteMany({ where: { dayId, castId } });
+      if (existing.length > 0) {
+        await tx.shiftAdjustment.create({
+          data: {
+            dayId,
+            castId,
+            originalStart: existing[0]!.timeSlot,
+            originalEnd: existing[existing.length - 1]!.timeSlot + 0.5,
+            adjustedStart: null,
+            adjustedEnd: null,
+            action: "cut",
+            reason: reason || "シフト表から削除",
+          },
+        });
+      }
 
-    // 対応する ShiftRequest（その日のキャストの希望）も削除する。
-    // 残しておくと「未提出キャスト」一覧から漏れる（admin が addCast で自動生成した synthetic
-    // request が残ったまま slot だけ消えて、提出済み扱いになってしまう）。
-    // 他の日の希望は保持される（その日付分だけ削除）。
-    await prisma.shiftRequest.deleteMany({
-      where: { castId, periodId: dayForSlotLock.periodId, date: dayForSlotLock.date },
+      await tx.shiftSlot.deleteMany({ where: { dayId, castId } });
+
+      // ⚠️ シフト希望はここで消さない。
+      //    本人が出した希望まで消えると、提出済みのキャストが未提出一覧に載り、
+      //    「カットされた」という記録も追えなくなる。
+      //    シフト表から直接入れたキャストは、そもそも希望を作らない作りにしてある。
+
+      // 体入は 1 回の追加につき 1 人ぶん作られる。どの日にも載らなくなったら行ごと消す
+      await deleteTrialGuestIfUnused(castId, tx);
     });
 
     return NextResponse.json({ ok: true });
@@ -687,7 +604,14 @@ export async function POST(req: NextRequest) {
 
   // 編集（時間変更）+ 調整記録を自動作成
   if (action === "editCast") {
-    const { newStart, newEnd, reason } = body;
+    const newStart = body.newStart as number;
+    const newEnd = body.newEnd as number;
+    const reason = asOptionalString(body.reason);
+
+    if (!isValidShiftRange(newStart, newEnd)) return invalidRange();
+    if (!dayId || !castId) {
+      return NextResponse.json({ error: "dayId と castId が必要です" }, { status: 400 });
+    }
 
     const dayForEditLock = await prisma.shiftDay.findUnique({
       where: { id: dayId },
@@ -708,8 +632,7 @@ export async function POST(req: NextRequest) {
     });
 
     // editCast は「既存スロットの時間変更」専用。スロット 0 件の場合は別ユーザー or 別タブで
-    // 既に削除されている／元から無いケース。ここで誤って create してしまうと
-    // 「addCast 経由でない synthetic な配置」が生まれてしまうので 409 で弾く。
+    // 既に削除されている／元から無いケース。
     if (existing.length === 0) {
       return NextResponse.json(
         {
@@ -720,68 +643,59 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const originalStart = existing[0].timeSlot;
-    const originalEnd = existing[existing.length - 1].timeSlot + 0.5;
-
-    // 時間が変わった場合のみ調整記録
-    if (originalStart !== newStart || originalEnd !== newEnd) {
-      const adjAction = (newEnd - newStart) < (originalEnd - originalStart) ? "shorten" : "move";
-      await prisma.shiftAdjustment.create({
-        data: {
-          dayId,
-          castId,
-          originalStart,
-          originalEnd,
-          adjustedStart: newStart,
-          adjustedEnd: newEnd,
-          action: adjAction,
-          reason: reason || "時間変更",
-        },
-      });
-    }
-
+    const originalStart = existing[0]!.timeSlot;
+    const originalEnd = existing[existing.length - 1]!.timeSlot + 0.5;
     // 元のスロットからメモを保持（出勤スロットのメモ = シフト希望メモ）
-    const startSlotMemo = existing.find((s) => s.isStart)?.memo || null;
+    const startSlotMemo = existing.find((s) => s.isStart)?.memo ?? null;
 
-    // スロットを再作成（メモを引き継ぎ）
-    await prisma.shiftSlot.deleteMany({ where: { dayId, castId } });
-    const slots = [];
-    for (let t = newStart; t < newEnd; t += 0.5) {
-      slots.push({
-        dayId,
-        timeSlot: t,
-        castId,
-        isStart: t === newStart,
-        isEnd: t + 0.5 >= newEnd,
-        memo: t === newStart ? startSlotMemo : null,
-      });
-    }
-    if (slots.length > 0) {
-      await prisma.shiftSlot.createMany({ data: slots });
-    }
+    await prisma.$transaction(async (tx) => {
+      // 時間が変わった場合のみ調整記録
+      if (originalStart !== newStart || originalEnd !== newEnd) {
+        const adjAction =
+          newEnd - newStart < originalEnd - originalStart ? "shorten" : "move";
+        await tx.shiftAdjustment.create({
+          data: {
+            dayId,
+            castId,
+            originalStart,
+            originalEnd,
+            adjustedStart: newStart,
+            adjustedEnd: newEnd,
+            action: adjAction,
+            reason: reason || "時間変更",
+          },
+        });
+      }
+
+      await tx.shiftSlot.deleteMany({ where: { dayId, castId } });
+      const slots = slotsForRange(dayId, castId, newStart, newEnd, startSlotMemo);
+      if (slots.length > 0) {
+        await tx.shiftSlot.createMany({ data: slots });
+      }
+    });
 
     return NextResponse.json({ ok: true });
   }
 
   // 管理者メモ（日単位のJSON、キーは時間スロット）を更新
   if (action === "updateSlotMemo") {
-    const { timeSlot, memo } = body;
-    const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
-    if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
-    const periodForEdit = await prisma.shiftPeriod.findUnique({
-      where: { id: day.periodId },
-      select: { storeId: true },
+    const timeSlot = body.timeSlot;
+    const memo = typeof body.memo === "string" ? body.memo : "";
+    if (typeof timeSlot !== "number" || !Number.isFinite(timeSlot)) {
+      return NextResponse.json({ error: "timeSlot が不正です" }, { status: 400 });
+    }
+    const day = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { id: true, notes: true, periodId: true, period: { select: { storeId: true } } },
     });
-    if (!periodForEdit) return NextResponse.json({ error: "Period not found" }, { status: 404 });
-    const editRes = assertCanEditStore(session, periodForEdit.storeId);
+    if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const editRes = assertCanEditStore(session, day.period.storeId);
     if (editRes) return editRes;
     const slotMemoLock = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (slotMemoLock) return slotMemoLock;
 
     // notesフィールドにJSON形式で管理者メモを保存: {"slotMemos":{"20":"メモ内容",...}, "text":"通常備考"}
-    let parsed: any = {};
-    try { parsed = day.notes ? JSON.parse(day.notes) : {}; } catch { parsed = { text: day.notes || "" }; }
-    if (!parsed.slotMemos) parsed.slotMemos = {};
+    const parsed = parseDayNotes(day.notes);
     if (memo) {
       parsed.slotMemos[timeSlot.toString()] = memo;
     } else {
@@ -796,24 +710,19 @@ export async function POST(req: NextRequest) {
 
   // 備考テキストだけ更新（slotMemosを保持）
   if (action === "updateNotesText") {
-    const { text } = body;
-    const day = await prisma.shiftDay.findUnique({ where: { id: dayId } });
-    if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
-    const periodForEdit = await prisma.shiftPeriod.findUnique({
-      where: { id: day.periodId },
-      select: { storeId: true },
+    const text = typeof body.text === "string" ? body.text : "";
+    const day = await prisma.shiftDay.findUnique({
+      where: { id: dayId },
+      select: { id: true, notes: true, periodId: true, period: { select: { storeId: true } } },
     });
-    if (!periodForEdit) return NextResponse.json({ error: "Period not found" }, { status: 404 });
-    const editRes = assertCanEditStore(session, periodForEdit.storeId);
+    if (!day) return NextResponse.json({ error: "Day not found" }, { status: 404 });
+    const editRes = assertCanEditStore(session, day.period.storeId);
     if (editRes) return editRes;
     const lockNotes = await assertStaffShiftPeriodNotFinalized(day.periodId);
     if (lockNotes) return lockNotes;
 
-    let parsed: any = {};
-    if (day.notes) {
-      try { parsed = JSON.parse(day.notes); } catch { parsed = {}; }
-    }
-    parsed.text = text || "";
+    const parsed = parseDayNotes(day.notes);
+    parsed.text = text;
     await prisma.shiftDay.update({
       where: { id: dayId },
       data: { notes: JSON.stringify(parsed) },
@@ -822,7 +731,12 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "updateDay") {
-    const { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty } = body;
+    const targetBudgetRaw = body.targetBudget;
+    const targetBudget =
+      typeof targetBudgetRaw === "number" && Number.isFinite(targetBudgetRaw)
+        ? Math.round(targetBudgetRaw)
+        : null;
+
     const dayForUpdate = await prisma.shiftDay.findUnique({
       where: { id: dayId },
       select: { periodId: true, period: { select: { storeId: true } } },
@@ -834,48 +748,41 @@ export async function POST(req: NextRequest) {
     if (editRes) return editRes;
     const lockDay = await assertStaffShiftPeriodNotFinalized(dayForUpdate.periodId);
     if (lockDay) return lockDay;
+
     await prisma.shiftDay.update({
       where: { id: dayId },
-      data: { targetBudget, eventName, expectedVisitors, notes, employeeOnDuty },
+      data: {
+        targetBudget,
+        eventName: asOptionalString(body.eventName),
+        expectedVisitors: asOptionalString(body.expectedVisitors),
+        // notes は JSON 文字列（slotMemos を含む）なので trim しない
+        ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
+        employeeOnDuty: asOptionalString(body.employeeOnDuty),
+      },
     });
     return NextResponse.json({ ok: true });
   }
 
   // 元に戻す／やり直し用: シフト期間全体のスナップショットを一括で復元
   if (action === "restoreSnapshot") {
-    const { periodId, days, shiftRequests } = body as {
-      periodId: string;
-      days: Array<{
-        id: string;
-        targetBudget: number | null;
-        eventName: string | null;
-        expectedVisitors: string | null;
-        notes: string | null;
-        employeeOnDuty: string | null;
-        slots: Array<{
-          timeSlot: number;
-          castId: string;
-          isStart: boolean;
-          isEnd: boolean;
-          memo: string | null;
-        }>;
-      }>;
-      /**
-       * 期間全体のシフト希望スナップショット。createdAt/updatedAt を保持して復元する
-       * （未提出キャスト一覧の「最終操作日時」が Undo/Redo で書き換わらないように）。
-       * 旧クライアント互換のため省略可。省略時はシフト希望側は触らない。
-       */
-      shiftRequests?: Array<{
-        castId: string;
-        date: string;
-        startTime: number;
-        endTime: number;
-        notes: string | null;
-        status?: string;
-        createdAt?: string;
-        updatedAt?: string;
-      }>;
-    };
+    const periodId = typeof body.periodId === "string" ? body.periodId : "";
+    const days = body.days as
+      | Array<{
+          id: string;
+          targetBudget: number | null;
+          eventName: string | null;
+          expectedVisitors: string | null;
+          notes: string | null;
+          employeeOnDuty: string | null;
+          slots: Array<{
+            timeSlot: number;
+            castId: string;
+            isStart: boolean;
+            isEnd: boolean;
+            memo: string | null;
+          }>;
+        }>
+      | undefined;
 
     if (!periodId || !Array.isArray(days)) {
       return NextResponse.json({ error: "periodId and days are required" }, { status: 400 });
@@ -934,30 +841,34 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // shiftRequests スナップショットがあれば、期間内の希望を完全置換する。
-      // createdAt/updatedAt も渡された値で復元する（@updatedAt は create では尊重される）。
-      if (Array.isArray(shiftRequests)) {
-        await tx.shiftRequest.deleteMany({ where: { periodId } });
-        if (shiftRequests.length > 0) {
-          await tx.shiftRequest.createMany({
-            data: shiftRequests.map((r) => ({
-              castId: r.castId,
-              periodId,
-              date: new Date(r.date),
-              startTime: r.startTime,
-              endTime: r.endTime,
-              notes: r.notes ?? null,
-              status: r.status ?? "approved",
-              ...(r.createdAt ? { createdAt: new Date(r.createdAt) } : {}),
-              ...(r.updatedAt ? { updatedAt: new Date(r.updatedAt) } : {}),
-            })),
-          });
-        }
-      }
+      // ⚠️ シフト希望はここで触らない。
+      //    以前は期間の希望を全部消して作り直していたため、店長がシフト表を開いたあとに
+      //    キャストが出した希望が「元に戻す」で消えていた。
     });
 
     return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+}
+
+type DayNotes = { text: string; slotMemos: Record<string, string> };
+
+/** ShiftDay.notes は {"text":..., "slotMemos":{...}} の JSON。壊れていても落とさない */
+function parseDayNotes(raw: string | null): DayNotes {
+  if (!raw) return { text: "", slotMemos: {} };
+  try {
+    const parsed = JSON.parse(raw) as Partial<DayNotes> | null;
+    if (!parsed || typeof parsed !== "object") return { text: "", slotMemos: {} };
+    return {
+      text: typeof parsed.text === "string" ? parsed.text : "",
+      slotMemos:
+        parsed.slotMemos && typeof parsed.slotMemos === "object"
+          ? (parsed.slotMemos as Record<string, string>)
+          : {},
+    };
+  } catch {
+    // 旧形式（ただのテキスト）
+    return { text: raw, slotMemos: {} };
+  }
 }

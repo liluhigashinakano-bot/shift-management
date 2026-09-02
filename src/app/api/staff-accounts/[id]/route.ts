@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Session } from "next-auth";
 import { hashSync } from "bcryptjs";
 import crypto from "crypto";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getRole } from "@/lib/session-user";
+import { isStaffAccountRole } from "@/lib/roles";
+import { findExistingStaffLogin } from "@/lib/cast-duplicate-query";
+import { assignmentRows, parseStaffAccountBody } from "@/lib/staff-account-input";
 
 function generatePassword(): string {
   return crypto.randomBytes(9).toString("base64url");
 }
 
-function requireAdmin(session: { user?: { role?: string } } | null) {
-  if (!session || (session.user as { role?: string }).role !== "admin") {
-    return false;
-  }
-  return true;
+function requireAdmin(session: Session | null): boolean {
+  return Boolean(session) && getRole(session) === "admin";
 }
 
 async function assertStaffUser(id: string) {
@@ -20,7 +22,7 @@ async function assertStaffUser(id: string) {
     where: { id },
     select: { id: true, role: true },
   });
-  if (!user || !["admin", "employee", "viewer"].includes(user.role)) {
+  if (!user || !isStaffAccountRole(user.role)) {
     return null;
   }
   return user;
@@ -85,40 +87,32 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const name = String(body.name ?? "").trim();
-  const roleIn = String(body.role ?? "").trim();
-  const loginId = String(body.loginId ?? "").trim().toLowerCase();
-  const accessAllStores = Boolean(body.accessAllStores);
-  const editAllStores = Boolean(body.editAllStores);
-  const viewStoreIdsRaw = body.viewStoreIds ?? body.storeIds;
-  const editStoreIdsRaw = body.editStoreIds ?? body.storeIds;
-  const viewStoreIds = Array.isArray(viewStoreIdsRaw)
-    ? viewStoreIdsRaw.map((x) => String(x).trim()).filter(Boolean)
-    : [];
-  const editStoreIds = Array.isArray(editStoreIdsRaw)
-    ? editStoreIdsRaw.map((x) => String(x).trim()).filter(Boolean)
-    : [];
+  const parsed = await parseStaffAccountBody(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  }
+  const input = parsed.value;
 
-  if (!name || !loginId) {
-    return NextResponse.json({ error: "名前とIDは必須です" }, { status: 400 });
-  }
-  if (!["admin", "employee", "viewer"].includes(roleIn)) {
-    return NextResponse.json({ error: "権限の指定が不正です" }, { status: 400 });
-  }
-  if (loginId.includes("@") || /\s/.test(loginId)) {
-    return NextResponse.json(
-      { error: "ID に @ や空白は使えません" },
-      { status: 400 },
-    );
+  // 管理者を 0 人にしない。0 人になると権限設定を誰も開けなくなり、
+  // データベースを直接いじるしか戻す手が無くなる。
+  if (staff.role === "admin" && input.role !== "admin") {
+    const me = session?.user.id;
+    if (me && me === id) {
+      return NextResponse.json(
+        { error: "ログイン中の自分の権限は変更できません" },
+        { status: 400 },
+      );
+    }
+    const adminCount = await prisma.user.count({ where: { role: "admin" } });
+    if (adminCount <= 1) {
+      return NextResponse.json(
+        { error: "最後の管理者の権限は変更できません（先に別の管理者を作ってください）" },
+        { status: 400 },
+      );
+    }
   }
 
-  const email = `${loginId}@staff.local`;
-  const dup = await prisma.user.findFirst({
-    where: {
-      OR: [{ staffLoginId: loginId }, { email }],
-      NOT: { id },
-    },
-  });
+  const dup = await findExistingStaffLogin(input.email, input.loginId, id);
   if (dup) {
     return NextResponse.json(
       { error: "同じログインID（またはメール）のユーザーが既にいます" },
@@ -126,58 +120,21 @@ export async function PATCH(
     );
   }
 
-  const allStores = await prisma.store.findMany({ select: { id: true } });
-  const valid = new Set(allStores.map((s) => s.id));
-  const requestedStoreIds = [...new Set([...viewStoreIds, ...editStoreIds])];
-  for (const sid of requestedStoreIds) {
-    if (!valid.has(sid)) {
-      return NextResponse.json({ error: "無効な店舗IDが含まれています" }, { status: 400 });
-    }
-  }
-
-  const isAdminRole = roleIn === "admin";
-  const effectiveEditAll = isAdminRole ? true : roleIn === "employee" && editAllStores;
-  const effectiveAll = isAdminRole ? true : accessAllStores || effectiveEditAll;
-  const assignedStoreIds = effectiveAll
-    ? [...new Set(editStoreIds)]
-    : requestedStoreIds;
-  if (!effectiveAll && assignedStoreIds.length === 0) {
-    return NextResponse.json(
-      { error: "所属店舗を1つ以上選ぶか、「全店舗」を指定してください" },
-      { status: 400 },
-    );
-  }
-  if (roleIn === "viewer" && (effectiveEditAll || editStoreIds.length > 0)) {
-    return NextResponse.json(
-      { error: "閲覧者には編集権限を付与できません" },
-      { status: 400 },
-    );
-  }
-
-  const primaryStoreId =
-    effectiveAll || assignedStoreIds.length === 0 ? null : assignedStoreIds[0] ?? null;
+  const rows = assignmentRows(input);
 
   await prisma.$transaction([
     prisma.userStoreAssignment.deleteMany({ where: { userId: id } }),
     prisma.user.update({
       where: { id },
       data: {
-        name,
-        email,
-        staffLoginId: loginId,
-        role: roleIn,
-        accessAllStores: effectiveAll,
-        editAllStores: effectiveEditAll,
-        storeId: primaryStoreId,
-        assignedStores:
-          assignedStoreIds.length > 0
-            ? {
-                create: assignedStoreIds.map((storeId) => ({
-                  storeId,
-                  canEdit: effectiveEditAll ? true : editStoreIds.includes(storeId),
-                })),
-              }
-            : undefined,
+        name: input.name,
+        email: input.email,
+        staffLoginId: input.loginId,
+        role: input.role,
+        accessAllStores: input.accessAllStores,
+        editAllStores: input.editAllStores,
+        storeId: input.primaryStoreId,
+        assignedStores: rows.length > 0 ? { create: rows } : undefined,
       },
     }),
   ]);
@@ -186,11 +143,11 @@ export async function PATCH(
     ok: true,
     user: {
       id,
-      name,
-      loginId,
-      role: roleIn,
-      accessAllStores: effectiveAll,
-      editAllStores: effectiveEditAll,
+      name: input.name,
+      loginId: input.loginId,
+      role: input.role,
+      accessAllStores: input.accessAllStores,
+      editAllStores: input.editAllStores,
     },
   });
 }
@@ -205,7 +162,7 @@ export async function DELETE(
   }
 
   const { id } = await context.params;
-  const me = session?.user ? (session.user as { id?: string }).id : undefined;
+  const me = session?.user.id;
   if (me && id === me) {
     return NextResponse.json(
       { error: "ログイン中の自分自身は削除できません" },

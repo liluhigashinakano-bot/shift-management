@@ -34,7 +34,7 @@ export default async function WorkHoursPage({
   const session = await auth();
   if (!session) redirect("/login");
 
-  const role = (session.user as any).role as string | undefined;
+  const role = session.user.role;
   if (role === "cast") redirect("/mypage");
 
   const { storeId, periodId } = await params;
@@ -66,7 +66,7 @@ export default async function WorkHoursPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
-  assertStorePageAccess(session.user as any, storeId);
+  assertStorePageAccess(session.user, storeId);
 
   const storeCasts = await prisma.user.findMany({
     where: { storeId, role: "cast", isTrialGuest: false },
@@ -132,8 +132,8 @@ export default async function WorkHoursPage({
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="mx-auto w-full max-w-[1200px] min-w-0 px-3 py-4 sm:px-4">

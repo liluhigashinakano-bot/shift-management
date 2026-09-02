@@ -186,7 +186,7 @@ export function StaffAccountsList({
     const idNorm = loginId.trim().toLowerCase();
     if (!trimmedName || !idNorm) return;
 
-    if (role !== "admin") {
+    if (role === "employee") {
       if (
         !viewAllSelected &&
         !editAllSelected &&
@@ -204,7 +204,8 @@ export function StaffAccountsList({
     const editStoreIds = editAllSelected
       ? []
       : Array.from(editSelected).filter((x) => x !== ALL);
-    const accessAllStores = role === "admin" ? true : viewAllSelected || editAllSelected;
+    const accessAllStores =
+      role === "employee" ? viewAllSelected || editAllSelected : true;
     const editAllStores = role === "admin" ? true : role === "employee" && editAllSelected;
 
     setSaving(true);
@@ -392,7 +393,7 @@ export function StaffAccountsList({
               </label>
             </fieldset>
 
-            {role !== "admin" && (
+            {role === "employee" && (
               <div className="space-y-2">
                 <Label>所属店舗</Label>
                 <div className="space-y-2 rounded-md border p-3">
@@ -407,7 +408,6 @@ export function StaffAccountsList({
                       type="checkbox"
                       className="mx-auto"
                       checked={editAllSelected}
-                      disabled={role === "viewer"}
                       onChange={(e) => setEditAllStores(e.target.checked)}
                     />
                     <input
@@ -429,7 +429,6 @@ export function StaffAccountsList({
                             type="checkbox"
                             className="mx-auto"
                             checked={editSelected.has(s.id)}
-                            disabled={role === "viewer"}
                             onChange={() => toggleEditStore(s.id)}
                           />
                           <input
@@ -452,6 +451,12 @@ export function StaffAccountsList({
 
             {role === "admin" && (
               <p className="text-xs text-muted-foreground">管理者は全店舗です。</p>
+            )}
+
+            {role === "viewer" && (
+              <p className="text-xs text-muted-foreground">
+                閲覧者は全店舗を閲覧できます（店舗ごとの指定はありません）。
+              </p>
             )}
 
             <div className="space-y-1">
@@ -499,7 +504,7 @@ export function StaffAccountsList({
                   saving ||
                   !name.trim() ||
                   !loginId.trim() ||
-                  (role !== "admin" &&
+                  (role === "employee" &&
                     !viewAllSelected &&
                     !editAllSelected &&
                     viewSelected.size === 0 &&

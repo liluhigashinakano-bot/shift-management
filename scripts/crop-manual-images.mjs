@@ -3,7 +3,7 @@
  * Windows タスクバー相当の下端を切り取る（上書き保存）。
  * 依存: sharp（devDependencies）
  */
-import { readdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";

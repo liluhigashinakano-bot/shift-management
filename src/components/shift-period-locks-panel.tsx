@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
+import { errorMessageFromResponse } from "@/lib/api-request";
+import { toast } from "sonner";
 
 type Props = {
   periodId: string;
@@ -49,13 +51,18 @@ export function ShiftPeriodLocksPanel({
           body: JSON.stringify({ locked }),
         }),
       ]);
-      const dataReq = await resReq.json();
-      const dataSlot = await resSlot.json();
-      if (resReq.ok && resSlot.ok) {
-        setReqLocked(Boolean(dataReq.shiftRequestsLocked));
-        setSlotLocked(Boolean(dataSlot.shiftSlotsLocked));
+      if (!resReq.ok || !resSlot.ok) {
+        // 失敗した理由を出す（出さないと「押しても変わらない」に見える）
+        const failed = !resReq.ok ? resReq : resSlot;
+        toast.error(await errorMessageFromResponse(failed, "締切を切り替えられませんでした"));
         router.refresh();
+        return;
       }
+      const dataReq = (await resReq.json()) as { shiftRequestsLocked?: boolean };
+      const dataSlot = (await resSlot.json()) as { shiftSlotsLocked?: boolean };
+      setReqLocked(Boolean(dataReq.shiftRequestsLocked));
+      setSlotLocked(Boolean(dataSlot.shiftSlotsLocked));
+      router.refresh();
     } finally {
       setLoading(false);
     }

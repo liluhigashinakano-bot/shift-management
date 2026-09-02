@@ -6,7 +6,7 @@ import { NavHeader } from "@/components/nav-header";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { canEditStore, getAccessibleStoreIds } from "@/lib/store-access";
+import { getAccessibleStoreIds } from "@/lib/store-access";
 import {
   nextPeriod,
   periodFromNow,
@@ -110,8 +110,9 @@ export default async function DashboardPage({
     displayPeriodsByStore.set(store.id, displayPeriods);
   }
 
+  // 期間が無いと画面にリンクが出ない。編集できない人が見ても作られるようにする
+  // （中身のない期間の枠を用意するだけで、データには触らない）
   for (const store of stores) {
-    if (!canEditStore(session.user, store.id)) continue;
     for (const p of displayPeriodsByStore.get(store.id) ?? []) {
       await ensureShiftPeriod(store.id, p.year, p.month, p.half);
     }

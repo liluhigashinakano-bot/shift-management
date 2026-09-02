@@ -9,6 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { normalizeLoginCredential } from "@/lib/login-email";
 
+/** 失敗の理由は 1 種類にまとめる（内部の事情はキャストに見せない） */
+const LOGIN_FAILED_MESSAGE =
+  "キャストIDまたはパスワードが正しくありません。何度か続けて間違えると、しばらく試せなくなります。";
+
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -34,24 +38,20 @@ export default function LoginPage() {
     });
 
     if (!res) {
-      setError("ログイン処理に失敗しました（応答がありません）");
+      setError("つながりませんでした。電波と接続を確かめて、もう一度お試しください。");
       setLoading(false);
       return;
     }
 
     if (!res.ok) {
-      setError(`ログインに失敗しました（HTTP ${res.status}）`);
+      setError(LOGIN_FAILED_MESSAGE);
       setLoading(false);
       return;
     }
 
     // redirect:false の場合、失敗でも res.error が空のことがあるので URL も見る
     if (res.error) {
-      const msg =
-        res.error === "CredentialsSignin"
-          ? "キャストIDまたはパスワードが正しくありません"
-          : `ログインに失敗しました（${res.error}）`;
-      setError(msg);
+      setError(LOGIN_FAILED_MESSAGE);
       setLoading(false);
       return;
     }
@@ -61,11 +61,7 @@ export default function LoginPage() {
         const u = new URL(res.url);
         const err = u.searchParams.get("error");
         if (err) {
-          const msg =
-            err === "CredentialsSignin"
-              ? "キャストIDまたはパスワードが正しくありません"
-              : `ログインに失敗しました（${err}）`;
-          setError(msg);
+          setError(LOGIN_FAILED_MESSAGE);
           setLoading(false);
           return;
         }
@@ -78,7 +74,7 @@ export default function LoginPage() {
     const session = await getSession();
     if (!session) {
       setError(
-        "ログインは通りましたが、セッションを確認できませんでした。開発サーバーを一度止めて起動し直し、同じアドレス（例: http://localhost:3001）で開き直してください。",
+        "ログインの確認ができませんでした。ページを再読み込みして、もう一度お試しください。",
       );
       setLoading(false);
       return;
@@ -95,9 +91,7 @@ export default function LoginPage() {
           <CardTitle className="text-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-sky-500 bg-clip-text text-transparent">
             シフト管理システム
           </CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            ガールズバー 7店舗シフト管理
-          </p>
+          <p className="text-sm text-gray-500 mt-1">シフトの提出と確認</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

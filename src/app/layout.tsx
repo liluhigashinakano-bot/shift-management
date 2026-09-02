@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "シフト管理アプリ",
-  description: "ガールズバー7店舗のシフト管理システム",
+  description: "店舗のシフト作成・希望の受付・確定シフトの共有",
 };
 
 /** スマホ・タブレット向け: セーフエリア・ピンチズーム許可など */

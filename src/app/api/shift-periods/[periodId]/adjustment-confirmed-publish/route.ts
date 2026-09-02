@@ -10,7 +10,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const user = session.user as { role?: string; storeId?: string | null };
+  const user = session.user;
   const role = user.role;
   if (role !== "admin" && role !== "employee") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -31,7 +31,7 @@ export async function POST(
   });
   if (!period) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (role === "employee" && !canEditStore(user as any, period.storeId)) {
+  if (role === "employee" && !canEditStore(user, period.storeId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

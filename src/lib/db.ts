@@ -2,8 +2,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 // ビルド時（Docker / CI）では DATABASE_URL が未設定のことがある。実行時は Railway の Variables で必ず設定する。
+// `??` だと空文字（DATABASE_URL=""）を「設定済み」と見なして控えに落ちないため `||` を使う。
 const databaseUrl =
-  process.env.DATABASE_URL ??
+  process.env.DATABASE_URL ||
   "postgresql://postgres:postgres@127.0.0.1:5432/postgres";
 
 const adapter = new PrismaPg({ connectionString: databaseUrl });

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/modal";
+import { postJson } from "@/lib/api-request";
 
 type Props = {
   periodId: string;
@@ -26,19 +27,15 @@ export function AdjustmentConfirmedPublishPanel({
   const setPublishedApi = async (next: boolean) => {
     setLoading(true);
     try {
-      const res = await fetch(
+      const result = await postJson(
         `/api/shift-periods/${periodId}/adjustment-confirmed-publish`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ published: next }),
-        },
+        { published: next },
+        { fallbackMessage: "シフトの確定を切り替えられませんでした" },
       );
-      const data = (await res.json()) as { adjustmentConfirmedPublished?: boolean };
-      if (res.ok) {
-        setPublished(Boolean(data.adjustmentConfirmedPublished));
-        router.refresh();
-      }
+      if (!result.ok) return;
+      const data = result.data as { adjustmentConfirmedPublished?: boolean } | null;
+      setPublished(Boolean(data?.adjustmentConfirmedPublished));
+      router.refresh();
     } finally {
       setLoading(false);
     }

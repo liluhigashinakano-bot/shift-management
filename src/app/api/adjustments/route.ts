@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { canEditStore } from "@/lib/store-access";
-
-function getRole(session: any) {
-  return (session?.user as any)?.role as string | undefined;
-}
+import { canAccessStore, canEditStore } from "@/lib/store-access";
+import { getRole } from "@/lib/session-user";
+import { isValidShiftRange, INVALID_RANGE_MESSAGE } from "@/lib/shift-time-range";
 
 // GET: 調整一覧取得
 export async function GET(req: NextRequest) {
@@ -16,6 +14,19 @@ export async function GET(req: NextRequest) {
   const periodId = req.nextUrl.searchParams.get("periodId");
   if (!periodId) {
     return NextResponse.json({ error: "periodId required" }, { status: 400 });
+  }
+
+  const period = await prisma.shiftPeriod.findUnique({
+    where: { id: periodId },
+    select: { storeId: true },
+  });
+  if (!period) {
+    return NextResponse.json({ error: "Period not found" }, { status: 404 });
+  }
+  // キャストは自分の分だけ。それ以外は見られる店舗かを確かめる
+  // （以前は店舗の確認が無く、住所を打てば他店舗の調整を取り出せた）
+  if (role !== "cast" && !canAccessStore(session.user, period.storeId)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // periodに属するshiftDayのIDを取得
@@ -49,13 +60,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { action } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "リクエストの形式が不正です" }, { status: 400 });
+  }
+  const action = typeof body.action === "string" ? body.action : "";
 
   if (action === "create") {
-    const { dayId, castId, originalStart, originalEnd, adjustedStart, adjustedEnd, adjustAction, reason } = body;
+    const dayId = String(body.dayId ?? "");
+    const castId = String(body.castId ?? "");
+    const originalStart = body.originalStart as number;
+    const originalEnd = body.originalEnd as number;
+    const adjustedStart = (body.adjustedStart ?? null) as number | null;
+    const adjustedEnd = (body.adjustedEnd ?? null) as number | null;
+    const adjustAction = String(body.adjustAction ?? "");
+    const reason = typeof body.reason === "string" ? body.reason.trim() || null : null;
+
+    if (!dayId || !castId) {
+      return NextResponse.json({ error: "dayId と castId が必要です" }, { status: 400 });
+    }
+    if (!isValidShiftRange(originalStart, originalEnd)) {
+      return NextResponse.json({ error: INVALID_RANGE_MESSAGE }, { status: 400 });
+    }
+    if (
+      adjustedStart !== null &&
+      adjustedEnd !== null &&
+      !isValidShiftRange(adjustedStart, adjustedEnd)
+    ) {
+      return NextResponse.json({ error: INVALID_RANGE_MESSAGE }, { status: 400 });
+    }
+    if (!["cut", "shorten", "move", "help"].includes(adjustAction)) {
+      return NextResponse.json({ error: "アクションの指定が不正です" }, { status: 400 });
+    }
+
     const dayRow = await prisma.shiftDay.findUnique({
-      where: { id: dayId as string },
+      where: { id: dayId },
       select: { period: { select: { adjustmentConfirmedPublished: true, storeId: true } } },
     });
     if (!dayRow) {
@@ -63,11 +104,14 @@ export async function POST(req: NextRequest) {
     }
     if (dayRow.period.adjustmentConfirmedPublished) {
       return NextResponse.json(
-        { error: "シフト確定済みのため調整記録を追加できません（「シフトロック中」ボタンで解除してください）" },
+        {
+          error:
+            "シフト確定済みのため調整記録を追加できません（「シフトロック中」ボタンで解除してください）",
+        },
         { status: 403 },
       );
     }
-    if (!canEditStore(session.user as any, dayRow.period.storeId)) {
+    if (!canEditStore(session.user, dayRow.period.storeId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const adj = await prisma.shiftAdjustment.create({
@@ -76,34 +120,43 @@ export async function POST(req: NextRequest) {
         castId,
         originalStart,
         originalEnd,
-        adjustedStart: adjustedStart ?? null,
-        adjustedEnd: adjustedEnd ?? null,
+        adjustedStart,
+        adjustedEnd,
         action: adjustAction,
-        reason: reason || null,
+        reason,
       },
     });
     return NextResponse.json(adj);
   }
 
   if (action === "delete") {
-    const adjId = String((body as { id?: unknown }).id ?? "").trim();
+    const adjId = String(body.id ?? "").trim();
     if (!adjId) {
       return NextResponse.json({ error: "id が必要です" }, { status: 400 });
     }
     const existingAdj = await prisma.shiftAdjustment.findUnique({
       where: { id: adjId },
-      select: { day: { select: { period: { select: { adjustmentConfirmedPublished: true, storeId: true } } } } },
+      select: {
+        day: {
+          select: {
+            period: { select: { adjustmentConfirmedPublished: true, storeId: true } },
+          },
+        },
+      },
     });
     if (!existingAdj) {
       return NextResponse.json({ error: "調整が見つかりません" }, { status: 404 });
     }
     if (existingAdj.day.period.adjustmentConfirmedPublished) {
       return NextResponse.json(
-        { error: "シフト確定済みのため調整記録を削除できません（「シフトロック中」ボタンで解除してください）" },
+        {
+          error:
+            "シフト確定済みのため調整記録を削除できません（「シフトロック中」ボタンで解除してください）",
+        },
         { status: 403 },
       );
     }
-    if (!canEditStore(session.user as any, existingAdj.day.period.storeId)) {
+    if (!canEditStore(session.user, existingAdj.day.period.storeId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     await prisma.shiftAdjustment.delete({ where: { id: adjId } });

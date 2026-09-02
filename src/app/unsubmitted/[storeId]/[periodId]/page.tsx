@@ -18,7 +18,7 @@ export default async function UnsubmittedCastsPage({
   const { storeId, periodId } = await params;
 
   // assertStorePageAccess は cast を /mypage に、店舗アクセス権が無いユーザーを /dashboard にリダイレクトする
-  assertStorePageAccess(session.user as any, storeId);
+  assertStorePageAccess(session.user, storeId);
 
   const period = await prisma.shiftPeriod.findUnique({
     where: { id: periodId },
@@ -80,8 +80,8 @@ export default async function UnsubmittedCastsPage({
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-3xl mx-auto w-full min-w-0 px-3 sm:px-4 py-4 sm:py-6">
@@ -98,6 +98,9 @@ export default async function UnsubmittedCastsPage({
             </h1>
             <p className="mt-0.5 text-xs text-gray-500 sm:text-sm">
               {period.store.name}‐{period.year}年{period.month}月{halfLabel}
+            </p>
+            <p className="mt-1 text-[11px] text-gray-500 sm:text-xs">
+              本人からシフト希望が届いていないキャストです。シフト表から直接入れた場合もここに出ます。
             </p>
           </div>
           <div className="shrink-0">

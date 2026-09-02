@@ -267,3 +267,65 @@
 - `docs/WORK_LOG.md`
 
 ---
+
+### 2026-09-02（網羅レビュー）
+
+**概要:** コード全文（約 15,600 行）・型検査・lint・テストから、不具合と操作性の問題を 37 件洗い出した。コードの変更はなし。結果は点検報告（Artifact）にまとめた: https://claude.ai/code/artifact/629478b6-d3ef-4177-925f-536e2e27b345
+
+**重いもの（危険 5 件）:**
+- `/api/casts` GET と `casts/page.tsx` がキャスト全員の `passwordHash`・`hourlyRate` をそのままブラウザへ渡している（6 桁 PIN なので総当たりで割り出せる）
+- シフト表の「元に戻す」（restoreSnapshot）が期間の希望を全部消して作り直すため、その間にキャストが出した希望が消える
+- 出勤を退勤より遅くすると退勤の値が古いまま送られ、退勤＜出勤の希望が保存される（画面 5 か所、裏側の確認なし）
+- 「＋追加シフト」で同じ日に同じキャストを 2 回入れると先の枠が消える（addCast がその日の枠を全削除してから作る）
+- 保存失敗を知らせない画面が 8 か所（窓が閉じて成功に見える）
+
+**確かめたこと:** tsc ○（ソース側の誤りなし）／ npm test ○（4 本 49 件）／ lint ×（100 件、ほぼ any と未使用変数）
+**確かめていないこと:** ブラウザ・実機で触っていない（ログインが要るためこの席では不可、手元 DB も空）。Railway の TZ 設定、5 月に戻した「メニューの膜が残る」の再現。
+
+**変更ファイル:** `docs/WORK_LOG.md` のみ
+
+**Git:** 未コミット
+
+### 2026-09-02（網羅レビューの指摘を修正）
+
+**概要:** 上のレビューで挙げた 37 件のうち **36 件を修正**。残り 1 件（作業中の控えファイルの削除）は消すと戻せないため未実施。コード変更 56 ファイル、新規 12 ファイル。
+
+**危険（5 件）**
+- `/api/casts` と `casts/page.tsx` が返す項目を `CAST_PUBLIC_SELECT` に絞り、`passwordHash`・`hourlyRate`・`posId` がブラウザへ渡らないようにした
+- 「元に戻す」（restoreSnapshot）からシフト希望を外した。巻き戻すのはシフト表だけ。あわせて `addCast` が作っていた合成の希望と `removeCast` の希望削除も廃止（→ 中20 も同時に解消）
+- 出勤・退勤の妥当性を `isValidShiftRange` に集約し、裏側（`/api/shifts` `/api/requests` `/api/adjustments` `/api/form-import`）で必ず通す。画面側は `clampEndToStart` で出勤を変えたとき退勤を寄せる
+- `addCast` は重なる時間帯だけ差し替える（以前はその日のスロットを全削除）。境界の出勤・退勤の印は `repairSlotBoundaries` で付け直す
+- 保存の失敗を必ず知らせる。`src/lib/api-request.ts` の `postJson` を作り、追加シフト・時間編集・削除・日別情報・企画名等・枠メモ・ドラッグ・店舗管理・締切・シフト確定・元に戻すから呼ぶ。失敗時は窓を閉じない
+
+**高（9 件）**
+- 店舗管理は管理者だけに操作ボタンを出す（裏側と一致）。店舗名は空・重複・50 文字超を弾く
+- 従業員ID とキャストID を大文字小文字を無視して相互に重複チェック（`findExistingStaffLogin` / `findExistingCastForCreate`）
+- 最後の管理者の降格・自分の権限変更を禁止
+- 閲覧者は全店舗に統一。権限設定の画面から店舗の指定欄を消し、「閲覧者は全店舗」と明記
+- 利用者が消えたらログインを無効化。パスワードの指紋（`pwf`）をログインに持たせ、再発行で他端末を追い出す
+- 期間の判定を日本時間に統一（`src/lib/jst.ts`）。深夜 0〜9 時のずれを解消
+- 本番への列追加は「デプロイ後に手で `prisma migrate deploy`」に一本化。Dockerfile の説明・`package.json` の `start`・`docs/STAGING.md` の食い違いを解消
+- `ensureShiftPeriod` を upsert ＋ `createMany(skipDuplicates)` に変更（同時に開いてもエラー画面にならない。書き込みも 1 店舗 15〜16 回 → 2 回）
+- 確定前のシフトはキャストに見せない（確定シフトは案内文、調整一覧は「確定」欄を出さない）
+
+**中（14 件）** 希望の付け替え時の重複を 409 で弾く／付け替えで時間と備考を持ち越す／締切中も内容を見られる（変更ボタンだけ無効）／枠メモが読み直しに追従／マイページと希望一覧の入口で期間を作る／Google フォームはキャストID で突き合わせ／`/mypage` は管理者・従業員をダッシュボードへ（`mypage-form.tsx` 削除）／ログインの失敗回数制限（同じ ID で 5 回 → 10 分）／ヘルプ先の店舗一覧を店舗テーブルから作る／体入はどの日にも載らなくなったら利用者ごと削除／スプレッドシート連携は「まとめて 1 回で書き込む」「出勤〜退勤の全スロットを作る」「備考の JSON をそのまま書かない」／希望・調整の受け口に店舗の確認を追加
+
+**低（9 件）** 書き方の検査 100 件 → 0 件（`as any` を型で置き換え）／ログイン文言の統一／固定の「7店舗」を削除／閲覧時のカーソル／コピー失敗の表示／＋営業情報・＋追加シフトの当たりを拡大／マニュアルの誤字 2 件／`db.ts` の空文字対策
+
+**新しく足したテスト:** `shift-time-range`（24）・`jst`（12）・`login-attempts`（10）。既存とあわせて 7 本 95 件がすべて通過。
+
+**変更ファイル（主なもの）:**
+- 新規: `src/lib/api-request.ts` `jst.ts` `roles.ts` `session-user.ts` `shift-time-range.ts` `shift-slot-writer.ts` `staff-account-input.ts` `cast-periods.ts` `login-attempts.ts` ＋ テスト 3 本
+- `src/app/api/*`（shifts / requests / casts / staff-accounts / stores / adjustments / form-import / sync）
+- `src/lib/auth.ts` `ensure-shift-period.ts` `period-utils.ts` `sheet-sync.ts` `google-sheets.ts` `cast-duplicate-query.ts` `trial-guest-user.ts`
+- 画面・部品ほぼ全て、`Dockerfile` `package.json` `docs/STAGING.md` `docs/*_MANUAL.md`
+
+**確かめたこと:** `tsc --noEmit` ○ / `eslint` ○（0 件）/ `npm test` ○（7 本 95 件）/ `npm run build` ○
+**確かめていないこと:** ブラウザ・実機で触っていない。DB につないだ動作確認をしていない。
+
+**メモ（デプロイ前に必要）:**
+- スキーマ変更は無いので `prisma migrate deploy` は不要
+- 既存データに残っている「シフト表から自動生成された希望」は見分けが付かないため、そのまま残る。未提出一覧が実態と合うのは、この修正以降に追加した分から
+- `.backup` `.backup2` `dev.db` の 6 ファイルは未削除（git 管理外で戻せないため、判断を仰ぐ）
+
+**Git:** 未コミット

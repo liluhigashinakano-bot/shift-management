@@ -8,10 +8,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "prisma migrate deploy && next start",
+    "start": "next start",
     "lint": "eslint",
     "verify": "npm test && npm run build",
-    "test": "npm run test:login-email && npm run test:sheet-date && npm run test:google-form-config && npm run test:shift-utils",
+    "test": "npm run test:login-email && npm run test:sheet-date && npm run test:google-form-config && npm run test:shift-utils && npm run test:shift-time-range && npm run test:jst && npm run test:login-attempts",
     "test:shift-utils": "npx tsx src/lib/shift-utils.test.ts",
     "test:login-email": "npx tsx src/lib/login-email.test.ts",
     "test:sheet-date": "npx tsx src/lib/sheet-date.test.ts",
@@ -23,7 +23,10 @@
     "docs:pdf:cast": "node scripts/print-manual-pdf.mjs CAST_MANUAL.md CAST_MANUAL.pdf",
     "docs:crop-images": "node scripts/crop-manual-images.mjs",
     "backup": "node scripts/backup.mjs",
-    "backup:daily": "node scripts/backup.mjs --daily"
+    "backup:daily": "node scripts/backup.mjs --daily",
+    "test:shift-time-range": "npx tsx src/lib/shift-time-range.test.ts",
+    "test:jst": "npx tsx src/lib/jst.test.ts",
+    "test:login-attempts": "npx tsx src/lib/login-attempts.test.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

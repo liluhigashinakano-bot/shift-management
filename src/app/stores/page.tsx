@@ -8,7 +8,7 @@ export default async function StoresPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const role = (session.user as { role?: string }).role;
+  const role = session.user.role;
   if (role === "cast") redirect("/dashboard");
 
   const stores = await prisma.store.findMany({
@@ -21,14 +21,14 @@ export default async function StoresPage() {
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-[800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
         <h1 className="text-xl font-bold mb-4">店舗管理</h1>
         <StoreManager
-          readOnly={role === "viewer"}
+          readOnly={role !== "admin"}
           initialStores={stores.map((s) => ({
             id: s.id,
             name: s.name,

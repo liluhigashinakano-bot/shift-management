@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { ShiftPrintStyles } from "./shift-print-styles";
 import { AutoFitText } from "./auto-fit-text";
+import { postJson } from "@/lib/api-request";
 
 type Cast = { id: string; name: string; isTrialGuest?: boolean };
 type ShiftSlot = {
@@ -80,6 +81,8 @@ type Props = {
   readOnly?: boolean;
   /** 管理者・従業員: キャスト向けの希望/表の締切は無視（シフト確定ロックと readOnly のみ制限） */
   bypassShiftPeriodLocks?: boolean;
+  /** ヘルプ先に選べる店舗名（キャストが 0 人の店舗も出す） */
+  storeNames?: string[];
 };
 
 type EditTarget = {
@@ -145,12 +148,6 @@ const COUNT_COLORS: [string, string][] = [
   /* 14 */ ["#a975dc", "#ffffff"], // 紫（白文字）
   /* 15 */ ["#8b5cf6", "#ffffff"], // 鮮やか紫（白文字）
 ];
-function countBg(count: number): string {
-  if (count === 0) return "";
-  const idx = Math.min(count, 15);
-  const [bg, fg] = COUNT_COLORS[idx];
-  return "";
-}
 function countStyle(count: number): React.CSSProperties {
   if (count === 0) return {};
   const idx = Math.min(count, 15);
@@ -291,6 +288,7 @@ export function ShiftGrid({
   allCasts,
   readOnly = false,
   bypassShiftPeriodLocks = false,
+  storeNames = [],
 }: Props) {
   const [data, setData] = useState(initialData);
   const lockSigRef = useRef(periodLockSignature(initialData));
@@ -347,22 +345,10 @@ export function ShiftGrid({
         memo: string | null;
       }>;
     }>;
-    /**
-     * 期間全体のシフト希望スナップショット。removeCast によって希望が削除されると
-     * 「未提出キャスト」一覧の判定が変わるため、Undo/Redo 時にも一緒に巻き戻す。
-     * createdAt/updatedAt も保持して「最終操作日時」がリセットされないようにする。
-     */
-    shiftRequests: Array<{
-      castId: string;
-      date: string;
-      startTime: number;
-      endTime: number;
-      notes: string | null;
-      status: string;
-      createdAt: string;
-      updatedAt: string;
-    }>;
   };
+  // 元に戻す・やり直しが巻き戻すのは「シフト表」だけ。
+  // 以前は期間のシフト希望も一緒に戻していたため、店長が表を開いたあとに
+  // キャストが出した希望が Ctrl+Z で消えていた。
   const MAX_HISTORY = 50;
   const snapshotFromData = useCallback((d: typeof data): HistorySnapshot => ({
     days: d.shiftDays.map((day) => ({
@@ -379,26 +365,6 @@ export function ShiftGrid({
         isEnd: s.isEnd,
         memo: s.memo ?? null,
       })),
-    })),
-    shiftRequests: (d.shiftRequests ?? []).map((r) => ({
-      castId: r.castId,
-      date: typeof r.date === "string" ? r.date : new Date(r.date).toISOString(),
-      startTime: r.startTime,
-      endTime: r.endTime,
-      notes: r.notes ?? null,
-      status: r.status ?? "approved",
-      createdAt:
-        typeof r.createdAt === "string"
-          ? r.createdAt
-          : r.createdAt
-            ? new Date(r.createdAt).toISOString()
-            : new Date().toISOString(),
-      updatedAt:
-        typeof r.updatedAt === "string"
-          ? r.updatedAt
-          : r.updatedAt
-            ? new Date(r.updatedAt).toISOString()
-            : new Date().toISOString(),
     })),
   }), []);
 
@@ -440,17 +406,16 @@ export function ShiftGrid({
     async (snap: HistorySnapshot) => {
       setHistoryBusy(true);
       try {
-        const res = await fetch("/api/shifts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const result = await postJson(
+          "/api/shifts",
+          {
             action: "restoreSnapshot",
             periodId: data.id,
             days: snap.days,
-            shiftRequests: snap.shiftRequests,
-          }),
-        });
-        if (!res.ok) {
+          },
+          { fallbackMessage: "元に戻せませんでした" },
+        );
+        if (!result.ok) {
           const r = await fetch(`/api/shifts?periodId=${data.id}`);
           if (r.ok) setData(await r.json());
           return false;
@@ -510,8 +475,9 @@ export function ShiftGrid({
     return () => window.removeEventListener("keydown", handler);
   }, [handleUndo, handleRedo]);
 
+  // 締切・確定後も窓は開く（希望の時間やメモを確かめられるように）。
+  // 変更・削除のボタンはモーダル側で押せなくしてある。
   const handleCastClick = (day: ShiftDay, castId: string, castName: string, isTrialGuest?: boolean) => {
-    if (slotsLocked) return;
     const castSlots = day.shiftSlots
       .filter((s) => s.castId === castId)
       .sort((a, b) => a.timeSlot - b.timeSlot);
@@ -589,21 +555,22 @@ export function ShiftGrid({
     }
 
     // APIで時間変更 + 調整記録
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const result = await postJson(
+      "/api/shifts",
+      {
         action: "editCast",
         dayId: dragging.dayId,
         castId: dragging.castId,
         newStart,
         newEnd,
         reason: "ドラッグで時間変更",
-      }),
-    });
+      },
+      { fallbackMessage: "時間を変更できませんでした" },
+    );
 
     setDragging(null);
-    reload();
+    // 失敗したときは読み直さない（理由は postJson が画面に出す）
+    if (result.ok) reload();
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -764,7 +731,7 @@ export function ShiftGrid({
                   <button
                     type="button"
                     disabled={slotsLocked}
-                    className={`inline-flex items-center justify-center rounded border px-0.5 py-0.5 text-[7px] font-medium shadow-sm whitespace-nowrap ${
+                    className={`inline-flex items-center justify-center rounded border px-1.5 py-1 text-[7px] font-medium shadow-sm whitespace-nowrap ${
                       slotsLocked
                         ? "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
                         : "border-blue-200 bg-white text-blue-600 hover:border-blue-300 hover:bg-blue-50"
@@ -829,7 +796,7 @@ export function ShiftGrid({
                       <button
                         type="button"
                         disabled={addShiftBlocked}
-                        className={`absolute right-0 top-0 inline-flex items-center justify-center rounded border px-0.5 py-0.5 text-[7px] font-bold no-print shadow-sm whitespace-nowrap ${
+                        className={`absolute right-0 top-0 inline-flex items-center justify-center rounded border px-1.5 py-1 text-[7px] font-bold no-print shadow-sm whitespace-nowrap ${
                           addShiftBlocked
                             ? "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
                             : "border-pink-200 bg-white text-pink-600 hover:border-pink-300 hover:bg-pink-50"
@@ -864,7 +831,7 @@ export function ShiftGrid({
               </tr>
             </thead>
             <tbody>
-              {TIME_SLOTS.map((slot, slotIdx) => {
+              {TIME_SLOTS.map((slot) => {
                 const isHourBoundary = slot % 1 === 0;
                 const rowBg = timeRowBg(slot);
                 const hourBorder = isHourBoundary ? "border-t border-t-gray-400" : "border-t border-t-gray-200";
@@ -905,7 +872,6 @@ export function ShiftGrid({
                         return displaySlotForClockOut(day.shiftSlots, s.castId) === slot;
                       });
                       const count = daySlots.length;
-                      const memos = daySlots.filter((s) => s.memo).map((s) => s.memo);
 
                       const hasWorking = count > 0;
 
@@ -991,9 +957,8 @@ export function ShiftGrid({
                                     lineHeight: 1.1,
                                     letterSpacing: 0,
                                   }}
-                                  className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 cursor-grab active:cursor-grabbing hover:shadow-sm font-medium hover:brightness-90 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
+                                  className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 ${slotsLocked ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} hover:shadow-sm font-medium hover:brightness-90 whitespace-nowrap ${nameLen > 4 ? "px-0.5" : "px-1"}`}
                                   onClick={() => {
-                                    if (slotsLocked) return;
                                     if (hasMemo) {
                                       const dd = new Date(day.date);
                                       setMemoView({
@@ -1073,10 +1038,9 @@ export function ShiftGrid({
                                   lineHeight: 1.1,
                                   letterSpacing: 0,
                                 }}
-                                className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 cursor-grab active:cursor-grabbing hover:brightness-90 whitespace-nowrap ${endNameLen > 4 ? "px-0.5" : "px-1"}`}
+                                className={`inline-flex w-full min-h-0 max-w-full items-center justify-center rounded py-0 ${slotsLocked ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} hover:brightness-90 whitespace-nowrap ${endNameLen > 4 ? "px-0.5" : "px-1"}`}
                                 title={isEndAdjusted && req ? `退勤変更: ${formatTimeSlot(req.endTime)}→${formatTimeSlot(origEnd)}` : endDisplayName}
                                 onClick={() => {
-                                  if (slotsLocked) return;
                                   handleCastClick(day, s.castId, endDisplayName, s.cast.isTrialGuest);
                                 }}
                               >
@@ -1265,6 +1229,7 @@ export function ShiftGrid({
           dayLabel={addDialog.dayLabel}
           allCasts={allCasts}
           currentStoreName={data.store.name}
+          storeNames={storeNames}
           existingDaySlots={
             data.shiftDays.find((d) => d.id === addDialog.dayId)?.shiftSlots.map((s) => ({
               castId: s.castId,
@@ -1293,7 +1258,9 @@ export function ShiftGrid({
           memo={editTarget.memo}
           periodId={data.id}
           allCasts={allCasts}
+          storeNames={storeNames}
           currentStoreName={data.store.name}
+          readOnly={readOnly}
           shiftRequestsLocked={effectiveReqLocked}
           shiftSlotsLocked={effectiveSlotLocked}
           periodShiftConfirmed={periodShiftConfirmed}
@@ -1354,34 +1321,24 @@ function FieldEditModal({
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
-    const updateData: Record<string, unknown> = {};
-    if (field === "notes") {
-      // notesの更新はupdateNotesText専用アクションで処理
-      await fetch("/api/shifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "updateNotesText", dayId, text: value || "" }),
+    try {
+      // notes の更新は slotMemos を保つ専用のアクションで処理する
+      const body =
+        field === "notes"
+          ? { action: "updateNotesText", dayId, text: value || "" }
+          : { action: "updateDay", dayId, [field]: value || null };
+      const result = await postJson("/api/shifts", body, {
+        fallbackMessage: "保存できませんでした",
       });
-      setSaving(false);
+      // 失敗したら窓を閉じない（閉じると成功したように見える）
+      if (!result.ok) return;
       onSaved();
       onClose();
-      return;
-    } else {
-      updateData[field] = value || null;
+    } finally {
+      setSaving(false);
     }
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "updateDay",
-        dayId,
-        ...updateData,
-      }),
-    });
-    setSaving(false);
-    onSaved();
-    onClose();
   };
 
   return (
@@ -1524,15 +1481,28 @@ function SlotMemoInput({
   const currentMemo = slotMemos[timeSlot.toString()] || "";
   const [value, setValue] = useState(currentMemo);
   const [dirty, setDirty] = useState(false);
+  const [syncedMemo, setSyncedMemo] = useState(currentMemo);
+
+  // 元に戻す・やり直しで表を読み直したとき、欄の中身も追いかける。
+  // 追いかけないと、戻したはずのメモが画面に残り、次に触ると古い文字で上書きされる。
+  if (currentMemo !== syncedMemo) {
+    setSyncedMemo(currentMemo);
+    setValue(currentMemo);
+    setDirty(false);
+  }
 
   const save = async () => {
     if (disabled) return;
     if (value === currentMemo) { setDirty(false); return; }
-    await fetch("/api/shifts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "updateSlotMemo", dayId, timeSlot, memo: value }),
-    });
+    const result = await postJson(
+      "/api/shifts",
+      { action: "updateSlotMemo", dayId, timeSlot, memo: value },
+      { fallbackMessage: "メモを保存できませんでした" },
+    );
+    if (!result.ok) {
+      // 保存できていないので、書いた文字はそのまま残して知らせだけ出す
+      return;
+    }
     setDirty(false);
   };
 

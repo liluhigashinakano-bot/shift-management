@@ -1,6 +1,7 @@
 import { prisma } from "./db";
-import { readSheet, writeSheet, writeCell, isSheetsConfigured } from "./google-sheets";
-import { TIME_SLOTS, displaySlotForClockOut, formatTimeSlot } from "./shift-utils";
+import { readSheet, writeCells, isSheetsConfigured } from "./google-sheets";
+import { TIME_SLOTS, displaySlotForClockOut } from "./shift-utils";
+import { slotsForRange, type NewSlot } from "./shift-slot-writer";
 
 // Google Sheetsのシート構造（Excel準拠）
 // Row 2: 日付番号（B2, H2, N2, T2, Z2, AF2, AL2, AR2）
@@ -16,12 +17,35 @@ const DATA_ROW_START = 7; // Excel 行番号（1-based）: 最初のスロット
 /** 集計行（Excel 1-based）= 最終スロットの次 */
 const summaryRow1Based = (rowOffset: number) => DATA_ROW_START + TIME_SLOTS.length + rowOffset;
 /** 集計行（readSheet の 0-indexed 行） */
-const summaryRow0Indexed = (rowOffset: number) => DATA_ROW_START - 1 + TIME_SLOTS.length + rowOffset;
+const summaryRow0Indexed = (rowOffset: number) =>
+  DATA_ROW_START - 1 + TIME_SLOTS.length + rowOffset;
+
+type CellUpdate = { cell: string; value: string | number | null };
+
+/** ShiftDay.notes は {"text":..., "slotMemos":{...}} の JSON。シートには text だけ出す */
+function dayNotesText(raw: string | null): string {
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as { text?: unknown } | null;
+    if (parsed && typeof parsed === "object") {
+      return typeof parsed.text === "string" ? parsed.text : "";
+    }
+    return "";
+  } catch {
+    // 旧形式（ただのテキスト）
+    return raw;
+  }
+}
 
 // DB → Google Sheets 同期
-export async function syncToSheets(periodId: string): Promise<{ success: boolean; message: string }> {
+export async function syncToSheets(
+  periodId: string,
+): Promise<{ success: boolean; message: string }> {
   if (!isSheetsConfigured()) {
-    return { success: false, message: "Google Sheets連携が未設定です。.envにGOOGLE_SHEET_ID等を設定してください。" };
+    return {
+      success: false,
+      message: "Google Sheets連携が未設定です。.envにGOOGLE_SHEET_ID等を設定してください。",
+    };
   }
 
   const period = await prisma.shiftPeriod.findUnique({
@@ -60,21 +84,24 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
     const mid = Math.ceil(period.shiftDays.length / 2);
     const weeks = [period.shiftDays.slice(0, mid), period.shiftDays.slice(mid)];
 
+    // 1 セルずつ送らず、まとめて 1 回で書き込む
+    const updates: CellUpdate[] = [];
+
     for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
-      const week = weeks[weekIdx];
-      const rowOffset = weekIdx === 0 ? 0 : 32; // 2段目（スロット行増に合わせてオフセット）
+      const week = weeks[weekIdx]!;
+      const rowOffset = weekIdx === 0 ? 0 : 32; // 2段目
 
       for (let dayIdx = 0; dayIdx < week.length; dayIdx++) {
-        const day = week[dayIdx];
+        const day = week[dayIdx]!;
         const colOffset = DAY_COL_OFFSETS[dayIdx];
         if (colOffset === undefined) continue;
 
-        // 各時間スロットを書き込み
+        const dateKey = new Date(day.date).toISOString().slice(0, 10);
+
         for (let slotIdx = 0; slotIdx < TIME_SLOTS.length; slotIdx++) {
-          const slot = TIME_SLOTS[slotIdx];
+          const slot = TIME_SLOTS[slotIdx]!;
           const row = DATA_ROW_START + slotIdx + rowOffset;
           const slotsAtTime = day.shiftSlots.filter((s) => s.timeSlot === slot);
-          const dateKey = new Date(day.date).toISOString().slice(0, 10);
 
           // 出勤キャスト名
           const startCasts = slotsAtTime
@@ -84,27 +111,21 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
           // 退勤キャスト名（整数時退勤は :00 行に合わせる／希望退勤29:00 かつ 実退勤も29:00 のときのみ名前を出さない）
           const endCasts = day.shiftSlots
             .filter(
-              (s) =>
-                s.isEnd &&
-                displaySlotForClockOut(day.shiftSlots, s.castId) === slot,
+              (s) => s.isEnd && displaySlotForClockOut(day.shiftSlots, s.castId) === slot,
             )
             .filter((s) => {
-              // 希望29:00でも実退勤がカットされていればシートにも名前を出す
               if (slot !== 29) return true;
               return !hideEndNameSet.has(`${s.castId}|${dateKey}`);
             })
             .map((s) => s.cast.name)
             .join("\n");
-          // 人数
           const count = slotsAtTime.length;
 
-          const colLetter = numToCol(colOffset);
-          const retireColLetter = numToCol(colOffset + 1);
-          const countColLetter = numToCol(colOffset + 2);
-
-          await writeCell(sheetName, `${colLetter}${row}`, startCasts || null);
-          await writeCell(sheetName, `${retireColLetter}${row}`, endCasts || null);
-          await writeCell(sheetName, `${countColLetter}${row}`, count || null);
+          updates.push(
+            { cell: `${numToCol(colOffset)}${row}`, value: startCasts || null },
+            { cell: `${numToCol(colOffset + 1)}${row}`, value: endCasts || null },
+            { cell: `${numToCol(colOffset + 2)}${row}`, value: count || null },
+          );
         }
 
         // 集計行
@@ -112,16 +133,32 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
         const totalHours = day.shiftSlots.length * 0.5;
         const budget = totalHours > 0 ? totalHours * 6000 : 0;
 
-        await writeCell(sheetName, `${numToCol(colOffset - 1)}${summaryRow}`, budget || null);
-        await writeCell(sheetName, `${numToCol(colOffset + 1)}${summaryRow}`, totalHours || null);
-        await writeCell(sheetName, `${numToCol(colOffset + 2)}${summaryRow}`, day.employeeOnDuty || null);
-
-        // 企画名, 来店予定, 備考
-        await writeCell(sheetName, `${numToCol(colOffset - 1)}${summaryRow + 1}`, day.eventName || null);
-        await writeCell(sheetName, `${numToCol(colOffset - 1)}${summaryRow + 2}`, day.expectedVisitors || null);
-        await writeCell(sheetName, `${numToCol(colOffset - 1)}${summaryRow + 3}`, day.notes || null);
+        updates.push(
+          { cell: `${numToCol(colOffset - 1)}${summaryRow}`, value: budget || null },
+          { cell: `${numToCol(colOffset + 1)}${summaryRow}`, value: totalHours || null },
+          {
+            cell: `${numToCol(colOffset + 2)}${summaryRow}`,
+            value: day.employeeOnDuty || null,
+          },
+          // 企画名, 来店予定, 備考
+          {
+            cell: `${numToCol(colOffset - 1)}${summaryRow + 1}`,
+            value: day.eventName || null,
+          },
+          {
+            cell: `${numToCol(colOffset - 1)}${summaryRow + 2}`,
+            value: day.expectedVisitors || null,
+          },
+          // ⚠️ notes は JSON なので、そのまま書くと {"slotMemos":...} がシートに出る
+          {
+            cell: `${numToCol(colOffset - 1)}${summaryRow + 3}`,
+            value: dayNotesText(day.notes) || null,
+          },
+        );
       }
     }
+
+    await writeCells(sheetName, updates);
 
     // シート名を保存
     if (!period.sheetName) {
@@ -132,13 +169,17 @@ export async function syncToSheets(periodId: string): Promise<{ success: boolean
     }
 
     return { success: true, message: `${sheetName} に同期しました` };
-  } catch (error: any) {
-    return { success: false, message: `同期エラー: ${error.message}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "不明なエラー";
+    console.error("[sheet-sync toSheets]", error);
+    return { success: false, message: `同期エラー: ${message}` };
   }
 }
 
 // Google Sheets → DB 同期
-export async function syncFromSheets(periodId: string): Promise<{ success: boolean; message: string }> {
+export async function syncFromSheets(
+  periodId: string,
+): Promise<{ success: boolean; message: string }> {
   if (!isSheetsConfigured()) {
     return { success: false, message: "Google Sheets連携が未設定です" };
   }
@@ -167,84 +208,116 @@ export async function syncFromSheets(periodId: string): Promise<{ success: boole
 
     const mid = Math.ceil(period.shiftDays.length / 2);
     const weeks = [period.shiftDays.slice(0, mid), period.shiftDays.slice(mid)];
-    let importedSlots = 0;
+    let importedCasts = 0;
+    const problems: string[] = [];
 
     for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
-      const week = weeks[weekIdx];
+      const week = weeks[weekIdx]!;
       const rowOffset = weekIdx === 0 ? 0 : 32;
 
       for (let dayIdx = 0; dayIdx < week.length; dayIdx++) {
-        const day = week[dayIdx];
+        const day = week[dayIdx]!;
         const colOffset = DAY_COL_OFFSETS[dayIdx];
         if (colOffset === undefined) continue;
 
-        // 既存スロットを削除
-        await prisma.shiftSlot.deleteMany({ where: { dayId: day.id } });
+        // 出勤・退勤の行から、キャストごとの [出勤, 退勤) を組み立てる。
+        // 以前は出勤の 30 分ぶんだけ作っていたため、退勤までの時間が入らなかった。
+        const startByCast = new Map<string, number>();
+        const endByCast = new Map<string, number>();
+        const namesSeen = new Set<string>();
 
-        // 各時間スロットを読み取り
         for (let slotIdx = 0; slotIdx < TIME_SLOTS.length; slotIdx++) {
-          const slot = TIME_SLOTS[slotIdx];
+          const slot = TIME_SLOTS[slotIdx]!;
           const row = DATA_ROW_START - 1 + slotIdx + rowOffset; // 0-indexed
+          const rowData = data[row];
+          if (!rowData) continue;
 
-          if (!data[row]) continue;
+          const startCell = rowData[colOffset];
+          const endCell = rowData[colOffset + 1];
 
-          const startCell = data[row][colOffset];
-          const endCell = data[row][colOffset + 1];
+          const splitNames = (cell: unknown): string[] =>
+            cell
+              ? String(cell)
+                  .split("\n")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : [];
 
-          // セル内の改行で複数キャスト名を分割
-          const startNames = startCell
-            ? String(startCell).split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const endNames = endCell
-            ? String(endCell).split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-
-          for (const name of startNames) {
+          for (const name of splitNames(startCell)) {
+            namesSeen.add(name);
             const castId = castMap.get(name);
-            if (castId) {
-              await prisma.shiftSlot.create({
-                data: { dayId: day.id, timeSlot: slot, castId, isStart: true },
-              });
-              importedSlots++;
-            }
+            if (castId && !startByCast.has(castId)) startByCast.set(castId, slot);
           }
-
-          // 退勤のみ（出勤なし）のキャストも記録
-          for (const name of endNames) {
+          for (const name of splitNames(endCell)) {
+            namesSeen.add(name);
             const castId = castMap.get(name);
-            if (castId) {
-              const existing = await prisma.shiftSlot.findFirst({
-                where: { dayId: day.id, timeSlot: slot, castId },
-              });
-              if (existing) {
-                await prisma.shiftSlot.update({
-                  where: { id: existing.id },
-                  data: { isEnd: true },
-                });
-              }
-            }
+            // 同じ人が複数回出てきたら、いちばん遅い退勤を採る
+            if (castId) endByCast.set(castId, slot);
           }
+        }
+
+        const dateLabel = `${new Date(day.date).getMonth() + 1}/${new Date(day.date).getDate()}`;
+        for (const name of namesSeen) {
+          if (!castMap.has(name)) {
+            problems.push(`${dateLabel} 不明なキャスト名: ${name}`);
+          }
+        }
+
+        const newSlots: NewSlot[] = [];
+        for (const [castId, start] of startByCast) {
+          const end = endByCast.get(castId);
+          if (end === undefined) {
+            const name = allCasts.find((c) => c.id === castId)?.name ?? castId;
+            problems.push(`${dateLabel} ${name}: 退勤が読み取れないため取り込みませんでした`);
+            continue;
+          }
+          if (end <= start) {
+            const name = allCasts.find((c) => c.id === castId)?.name ?? castId;
+            problems.push(`${dateLabel} ${name}: 退勤が出勤より前です`);
+            continue;
+          }
+          newSlots.push(...slotsForRange(day.id, castId, start, end, null));
+          importedCasts++;
         }
 
         // 集計情報を読み取り
         const summaryRow = summaryRow0Indexed(rowOffset);
-        if (data[summaryRow]) {
-          const budget = data[summaryRow][colOffset - 1];
-          const employee = data[summaryRow][colOffset + 2];
-          await prisma.shiftDay.update({
-            where: { id: day.id },
-            data: {
-              targetBudget: budget ? Number(budget) : null,
-              employeeOnDuty: employee ? String(employee) : null,
-            },
-          });
-        }
+        const summaryData = data[summaryRow];
+        const budgetRaw = summaryData?.[colOffset - 1];
+        const employeeRaw = summaryData?.[colOffset + 2];
+        const budget =
+          budgetRaw != null && budgetRaw !== "" && Number.isFinite(Number(budgetRaw))
+            ? Math.round(Number(budgetRaw))
+            : null;
+
+        await prisma.$transaction(async (tx) => {
+          await tx.shiftSlot.deleteMany({ where: { dayId: day.id } });
+          if (newSlots.length > 0) {
+            await tx.shiftSlot.createMany({ data: newSlots });
+          }
+          if (summaryData) {
+            await tx.shiftDay.update({
+              where: { id: day.id },
+              data: {
+                targetBudget: budget,
+                employeeOnDuty: employeeRaw ? String(employeeRaw) : null,
+              },
+            });
+          }
+        });
       }
     }
 
-    return { success: true, message: `${sheetName} から ${importedSlots} スロットを取り込みました` };
-  } catch (error: any) {
-    return { success: false, message: `同期エラー: ${error.message}` };
+    const problemPart =
+      problems.length > 0 ? `／注意: ${problems.slice(0, 5).join("；")}` : "";
+    return {
+      success: true,
+      message: `${sheetName} から ${importedCasts} 人分を取り込みました${problemPart}`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "不明なエラー";
+    console.error("[sheet-sync fromSheets]", error);
+    return { success: false, message: `同期エラー: ${message}` };
   }
 }
 

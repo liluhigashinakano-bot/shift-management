@@ -5,9 +5,11 @@ import { NavHeader } from "@/components/nav-header";
 import { ConfirmedShift } from "@/components/confirmed-shift";
 import { CastPeriodSelector } from "@/components/cast-period-selector";
 import Link from "next/link";
-import { periodFromNow, nextPeriod, periodIndex } from "@/lib/period-utils";
 import { assertStorePageAccess } from "@/lib/store-access";
 import { castSuffixForShiftBadge } from "@/lib/cast-display-name";
+import { listCastSelectablePeriods } from "@/lib/cast-periods";
+
+export const dynamic = "force-dynamic";
 
 export default async function ConfirmedPage({
   params,
@@ -16,7 +18,7 @@ export default async function ConfirmedPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
-  const role = (session.user as any).role as string | undefined;
+  const role = session.user.role;
   const userId = session.user.id;
 
   const { storeId, periodId } = await params;
@@ -39,51 +41,104 @@ export default async function ConfirmedPage({
 
   if (!period || period.storeId !== storeId) redirect("/dashboard");
 
-  if (role !== "cast") {
-    assertStorePageAccess(session.user as any, storeId);
+  const isCast = role === "cast";
+  if (!isCast) {
+    assertStorePageAccess(session.user, storeId);
   }
 
-  const selectablePeriods = await (async () => {
-    if (role !== "cast") return [];
-    const now = new Date();
-    const maxFuture = nextPeriod(periodFromNow(now));
-    const maxIdx = periodIndex(maxFuture);
-    const all = await prisma.shiftPeriod.findMany({
-      where: { storeId },
-      select: { id: true, year: true, month: true, half: true },
-      orderBy: [{ year: "asc" }, { month: "asc" }, { half: "asc" }],
-    });
-    return all.filter((p) => periodIndex({ year: p.year, month: p.month, half: p.half as any }) <= maxIdx) as any[];
-  })();
+  const selectablePeriods = isCast ? await listCastSelectablePeriods(storeId) : [];
 
-  if (role === "cast") {
-    // 自分の分だけ（自店舗分）
-    for (const day of period.shiftDays) {
-      (day.shiftSlots as any[]) = day.shiftSlots.filter((s) => s.castId === userId);
-    }
+  const halfLabel = period.half === "first" ? "前半" : "後半";
+  const published = Boolean(period.adjustmentConfirmedPublished);
+  // 確定前の作業中のシフトはキャストに見せない
+  const castMustWait = isCast && !published;
+
+  // キャストは自分の分だけ（自店舗分）
+  const visibleDays = isCast
+    ? period.shiftDays.map((day) => ({
+        ...day,
+        shiftSlots: day.shiftSlots.filter((s) => s.castId === userId),
+      }))
+    : period.shiftDays;
+
+  const header = (
+    <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="min-w-0 flex-1">
+        {!isCast && (
+          <Link
+            href={`/shifts/${storeId}/${periodId}`}
+            className="mb-1 inline-block text-xs text-gray-500 hover:text-gray-700 sm:text-sm"
+          >
+            &larr; シフト表に戻る
+          </Link>
+        )}
+        <h1 className="text-[11px] font-bold leading-tight sm:text-sm md:text-base whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
+          {period.store.name}‐{period.year}年{period.month}月{halfLabel}
+        </h1>
+      </div>
+      {isCast && (
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
+          <CastPeriodSelector
+            storeId={storeId}
+            currentPeriodId={periodId}
+            periods={selectablePeriods}
+          />
+          <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
+            <Link
+              href={`/requests/${storeId}/${periodId}`}
+              className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+            >
+              希望一覧
+            </Link>
+            <Link
+              href={`/adjustments/${storeId}/${periodId}`}
+              className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
+            >
+              調整一覧
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (castMustWait) {
+    return (
+      <div className="min-h-dvh">
+        <NavHeader
+          user={{
+            name: session.user.name,
+            role: session.user.role,
+            storeName: session.user.storeName,
+          }}
+        />
+        <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
+          {header}
+          <p className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-10 text-center text-sm text-gray-600">
+            この期間のシフトはまだ確定していません。
+            <br />
+            確定するとここに表示されます。
+          </p>
+        </main>
+      </div>
+    );
   }
 
   // この店舗のシフトに入っているキャスト一覧
   const castMap = new Map<string, string>();
-  for (const day of period.shiftDays) {
+  for (const day of visibleDays) {
     for (const slot of day.shiftSlots) {
-      castMap.set(
-        slot.castId,
-        castSuffixForShiftBadge(slot.cast as { name: string; isTrialGuest?: boolean }),
-      );
+      castMap.set(slot.castId, castSuffixForShiftBadge(slot.cast));
     }
   }
 
-  // 他店舗ヘルプ出勤
-  // staff: 店舗所属キャスト全員分
-  // cast: 自分の分だけ
+  // 他店舗ヘルプ出勤（staff: 店舗所属キャスト全員 / cast: 自分の分だけ）
   const storeCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { storeId, role: "cast", isTrialGuest: false },
+    where: isCast ? { id: userId } : { storeId, role: "cast", isTrialGuest: false },
     select: { id: true, name: true },
   });
   const storeCastIds = storeCasts.map((c) => c.id);
 
-  // 他店舗のシフト期間から所属キャストのスロットを取得
   const otherPeriods = await prisma.shiftPeriod.findMany({
     where: {
       year: period.year,
@@ -106,9 +161,9 @@ export default async function ConfirmedPage({
     },
   });
 
-  // ヘルプ出勤情報を自店舗のday構造にマージ
-  // dayIdマッピング（同じ日付の自店舗dayId）
-  const dayDateMap = new Map(period.shiftDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]));
+  const dayDateMap = new Map(
+    visibleDays.map((d) => [new Date(d.date).toISOString().slice(0, 10), d.id]),
+  );
 
   type HelpSlot = {
     castId: string;
@@ -130,14 +185,11 @@ export default async function ConfirmedPage({
 
       if (!helpSlotsByDay.has(myDayId)) helpSlotsByDay.set(myDayId, []);
       for (const slot of opDay.shiftSlots) {
-        castMap.set(
-          slot.castId,
-          castSuffixForShiftBadge(slot.cast as { name: string; isTrialGuest?: boolean }),
-        ); // キャスト一覧にも追加
+        castMap.set(slot.castId, castSuffixForShiftBadge(slot.cast));
         helpSlotsByDay.get(myDayId)!.push({
           castId: slot.castId,
           castName: slot.cast.name,
-          isTrialGuest: Boolean((slot.cast as { isTrialGuest?: boolean }).isTrialGuest),
+          isTrialGuest: Boolean(slot.cast.isTrialGuest),
           storeName: op.store.name,
           timeSlot: slot.timeSlot,
           isStart: slot.isStart,
@@ -147,15 +199,17 @@ export default async function ConfirmedPage({
     }
   }
 
-  if (role === "cast" && session.user.name && !castMap.has(userId)) {
+  if (isCast && session.user.name && !castMap.has(userId)) {
     castMap.set(userId, castSuffixForShiftBadge({ name: session.user.name }));
   }
 
-  const assignedCasts = [...castMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  const assignedCasts = [...castMap.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
   const allCasts = await prisma.user.findMany({
-    where: role === "cast" ? { id: userId } : { role: "cast", isTrialGuest: false },
-    include: { store: { select: { id: true, name: true } } },
+    where: isCast ? { id: userId } : { role: "cast", isTrialGuest: false },
+    select: { id: true, name: true, store: { select: { name: true } } },
     orderBy: { name: "asc" },
   });
 
@@ -164,59 +218,61 @@ export default async function ConfirmedPage({
     select: { castId: true, endTime: true, date: true },
   });
 
-  const halfLabel = period.half === "first" ? "前半" : "後半";
-
   return (
     <div className="min-h-dvh">
       <NavHeader
         user={{
           name: session.user.name,
-          role: (session.user as any).role,
-          storeName: (session.user as any).storeName,
+          role: session.user.role,
+          storeName: session.user.storeName,
         }}
       />
       <main className="max-w-[1800px] mx-auto w-full min-w-0 px-3 sm:px-4 py-4">
-        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0 flex-1">
-            {role !== "cast" && (
-              <Link
-                href={`/shifts/${storeId}/${periodId}`}
-                className="mb-1 inline-block text-xs text-gray-500 hover:text-gray-700 sm:text-sm"
-              >
-                &larr; シフト表に戻る
-              </Link>
-            )}
-            <h1 className="text-[11px] font-bold leading-tight sm:text-sm md:text-base whitespace-nowrap overflow-x-auto [scrollbar-width:thin]">
-              {period.store.name}‐{period.year}年{period.month}月{halfLabel}
-            </h1>
-          </div>
-          {role === "cast" && (
-            <div className="flex w-full min-w-0 flex-col gap-2 sm:ml-auto sm:w-auto sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
-              <CastPeriodSelector storeId={storeId} currentPeriodId={periodId} periods={selectablePeriods as any} />
-              <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
-                <Link
-                  href={`/requests/${storeId}/${periodId}`}
-                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
-                >
-                  希望一覧
-                </Link>
-                <Link
-                  href={`/adjustments/${storeId}/${periodId}`}
-                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-purple-200 bg-white px-2.5 py-1.5 text-xs font-medium text-purple-700 shadow-sm hover:bg-purple-50 sm:text-sm whitespace-nowrap"
-                >
-                  調整一覧
-                </Link>
-              </div>
-            </div>
-          )}
-        </div>
+        {header}
+        {!published && !isCast && (
+          <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            このシフトはまだ確定していません。キャストにはまだ表示されていません。
+          </p>
+        )}
         <ConfirmedShift
-          initialData={JSON.parse(JSON.stringify(period))}
+          initialData={{
+            id: period.id,
+            year: period.year,
+            month: period.month,
+            half: period.half,
+            store: { id: period.store.id, name: period.store.name },
+            shiftDays: visibleDays.map((d) => ({
+              id: d.id,
+              date: d.date.toISOString(),
+              dayOfWeek: d.dayOfWeek,
+              targetBudget: d.targetBudget,
+              eventName: d.eventName,
+              expectedVisitors: d.expectedVisitors,
+              notes: d.notes,
+              employeeOnDuty: d.employeeOnDuty,
+              shiftSlots: d.shiftSlots.map((s) => ({
+                id: s.id,
+                timeSlot: s.timeSlot,
+                castId: s.castId,
+                cast: {
+                  id: s.cast.id,
+                  name: s.cast.name,
+                  isTrialGuest: s.cast.isTrialGuest,
+                },
+                isStart: s.isStart,
+                isEnd: s.isEnd,
+                memo: s.memo,
+              })),
+            })),
+          }}
           assignedCasts={assignedCasts}
-          defaultSelectedCastId={role === "cast" ? userId : undefined}
-          allCasts={allCasts.map((c) => ({ id: c.id, name: c.name, store: c.store }))}
-          helpSlotsByDay={JSON.parse(JSON.stringify(Object.fromEntries(helpSlotsByDay)))}
-          storeName={period.store.name}
+          defaultSelectedCastId={isCast ? userId : undefined}
+          allCasts={allCasts.map((c) => ({
+            id: c.id,
+            name: c.name,
+            store: c.store,
+          }))}
+          helpSlotsByDay={Object.fromEntries(helpSlotsByDay)}
           shiftRequests={shiftRequestsForHide.map((r) => ({
             castId: r.castId,
             endTime: r.endTime,
