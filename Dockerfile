@@ -1,5 +1,5 @@
 # Prisma 7 は Node 20.19+ / 22.12+ / 24+ が必須のため固定
-FROM node:22.12.0-bookworm-slim
+FROM node:22.23.4-bookworm-slim
 
 WORKDIR /app
 
